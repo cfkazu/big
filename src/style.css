@@ -445,6 +445,19 @@ details.genome[open] summary::before {
   margin: 0 0 2px;
 }
 
+.digest {
+  margin: 6px 0 2px;
+  padding: 4px 8px;
+  background: var(--ink);
+  box-shadow: 0 0 0 2px var(--slate);
+  line-height: 1.45;
+  color: var(--white);
+}
+
+.digest .k {
+  color: var(--gray1);
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -903,6 +916,7 @@ canvas.chart {
   #timebar > .btn { flex: 1; min-width: 0; padding: 0 2px; }
   #timebar .speeds { width: auto; flex: none; }
   #timebar .speeds .sub { display: none; }
+  .wide-only { display: none; }
   #app { padding-bottom: 72px; }
   .stat { grid-template-columns: 72px minmax(0, 1fr) auto; }
   .stat .v { min-width: 0; }

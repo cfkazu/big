@@ -363,6 +363,77 @@ export class World {
     return ind.fatherId === this.playerId;
   }
 
+  /**
+   * きのう（直前に進めた 1 日）にプレイヤーの身に起きたことの要約。
+   * 同じ種類の出来事は名前をまとめて 1 行にする。
+   */
+  playerDigest(): string[] {
+    const p = this.player;
+    if (!p || this.phase !== 'breeding') return [];
+    const pid = p.id;
+    const s = this.slotOf(p);
+    const name = (id: number) => this.get(id)?.name ?? '―';
+    const group = new Map<string, string[]>();
+    const add = (key: string, who: string) => {
+      const list = group.get(key) ?? [];
+      if (!list.includes(who)) list.push(who);
+      group.set(key, list);
+    };
+    const lines: string[] = [];
+    for (const e of this.dayEvents) {
+      switch (e.kind) {
+        case 'display':
+        case 'fight':
+          if (e.aId === pid || e.bId === pid) {
+            const opp = name(e.aId === pid ? e.bId : e.aId);
+            lines.push(`${e.kind === 'display' ? '見せ合い' : '取っ組み合い'}で${opp}に${e.winnerId === pid ? '勝った' : '負けた'}`);
+          }
+          break;
+        case 'takeover':
+          if (e.newId === pid) lines.push('浜とハーレムを手に入れた');
+          if (e.oldId === pid) lines.push('浜とハーレムを失った');
+          break;
+        case 'mate':
+          if (e.maleId === pid) add('とつがった', name(e.femaleId));
+          else if (s !== null && this.get(e.femaleId)?.slot === s) add(`がほかのオスとつがった`, name(e.femaleId));
+          break;
+        case 'groom':
+          if (e.maleId === pid) add(`に${e.type === 'hoko' ? 'ホコの手入れ' : e.type === 'wound' ? '傷の手当て' : '毛づくろい'}をしてもらった`, name(e.femaleId));
+          break;
+        case 'tend':
+          if (e.maleId === pid) add('に構った', name(e.femaleId));
+          break;
+        case 'soothe':
+          if (e.maleId === pid) lines.push('ハーレムをなだめた');
+          break;
+        case 'move':
+          if (s !== null && e.to === s) add('が加わった', name(e.femaleId));
+          else if (s !== null && e.from === s) add('が去った', name(e.femaleId));
+          break;
+        case 'birth': {
+          const pup = this.get(e.pupId);
+          if (pup?.fatherId === pid) add('があなたの子を産んだ', name(e.motherId));
+          break;
+        }
+        case 'crushed':
+          if (s !== null && this.get(e.motherId)?.slot === s) add('の子が喧嘩で踏まれた', name(e.motherId));
+          break;
+        case 'chase':
+          if (e.holderId === pid) add('を追い払った', name(e.intruderId));
+          if (e.intruderId === pid) lines.push(`${name(e.holderId)}に見つかって追い払われた`);
+          break;
+        case 'abandon':
+          if (e.maleId === pid) lines.push('脂肪が尽きて浜を離れた');
+          break;
+      }
+    }
+    for (const [key, who] of group) {
+      const names = who.length > 3 ? `${who.slice(0, 3).join('・')}ほか${who.length - 3}頭` : who.join('・');
+      lines.push(`${names}${key}`);
+    }
+    return lines;
+  }
+
   /** 当主不在のまま年を進め、血を引くオスが生まれるのを待つ。経過年数を返す。 */
   waitForHeir(maxYears: number): number {
     const keepPlayer = this.playerId;

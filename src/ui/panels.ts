@@ -94,7 +94,19 @@ function playerCard(g: GameView): HTMLElement {
     stat('子', h('span'), `${p.childIds.length}頭`),
   );
   const thought = p.thought ? h('div', { class: 'thought' }, `「${p.thought.text}」`) : null;
-  return h('div', { class: 'win gold' }, cardHead, stats, thought, actions(g, p));
+  // きのうのできごと（くわしくはログ）
+  const digest = w.playerDigest();
+  const yesterday =
+    digest.length > 0
+      ? h(
+          'div',
+          { class: 'digest' },
+          h('div', { class: 'k' }, `${w.day}日目のできごと`),
+          ...digest.slice(0, 4).map((t) => h('div', null, `・${t}`)),
+          digest.length > 4 ? h('div', { class: 'sub' }, `ほか${digest.length - 4}件はログに`) : null,
+        )
+      : null;
+  return h('div', { class: 'win gold' }, cardHead, stats, thought, yesterday, actions(g, p));
 }
 
 function stat(k: string, mid: HTMLElement, v: string): HTMLElement {

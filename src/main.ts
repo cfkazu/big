@@ -573,7 +573,11 @@ class Game implements GameView {
     const bar = $('timebar');
     clear(bar);
     if (this.mode === 'title' || this.mode === 'loading') return;
-    const play = btn(this.playing ? '❚❚ 止める' : '▶ 自動で進める', () => this.togglePlay(), this.playing ? 'on' : 'primary');
+    const play = btn(
+      this.playing ? h('span', null, '❚❚ 止める') : h('span', null, '▶ 自動', h('span', { class: 'wide-only' }, 'で進める')),
+      () => this.togglePlay(),
+      this.playing ? 'on' : 'primary',
+    );
     const next = btn('次の日へ ▸', () => void this.stepDay(), '');
     const speeds = h('div', { class: 'speeds' }, h('span', { class: 'sub' }, '速さ'));
     for (const s of [1, 2, 4]) {

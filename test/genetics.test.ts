@@ -288,3 +288,27 @@ describe('初代の候補', () => {
     }
   });
 });
+
+describe('きのうのできごと', () => {
+  it('手入れしてもらったことが要約に出る', () => {
+    const w = World.create(21, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    const old = w.get(w.slotHolders[0]);
+    if (old) old.slot = null;
+    w.slotHolders[0] = p.id;
+    p.slot = 0;
+    const f = w.living().find((i) => i.sex === 'F' && w.age(i) >= 4)!;
+    f.slot = 0;
+    f.onBeach = true;
+    f.loyalty = 1;
+    (w as unknown as { invalidateSlots(): void }).invalidateSlots();
+    for (const m of w.living()) if (m.sex === 'M' && m.id !== p.id) m.lastLossDay = w.day;
+    w.setPlayerStance({ kind: 'groom', femaleId: f.id, type: 'hoko' });
+    const g = w.runDay();
+    let r = g.next();
+    while (!r.done) r = g.next('accept');
+    expect(w.playerDigest().some((t) => t.includes(f.name) && t.includes('ホコの手入れ'))).toBe(true);
+  });
+});
