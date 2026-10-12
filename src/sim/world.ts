@@ -456,7 +456,9 @@ export class World {
     const own = p.thought ? { speaker: p, text: p.thought.text } : null;
     const s = this.slotOf(p);
     if (this.phase !== 'breeding' || s === null) return own;
-    const recent = this.slotFemales(s).filter((f) => f.thought && f.thought.year === this.year && f.thought.day === this.day - 1);
+    const fs = this.slotFemales(s);
+    const pups = fs.map((f) => (f.pupId != null ? this.get(f.pupId) : undefined)).filter((x): x is Individual => !!x && x.alive);
+    const recent = [...fs, ...pups].filter((f) => f.thought && f.thought.year === this.year && f.thought.day === this.day - 1);
     if (recent.length === 0) return own;
     const rank = (f: Individual) => {
       const t = f.thought!;
@@ -856,6 +858,7 @@ export class World {
       const h = this.get(this.slotHolders[s]);
       if (h) h.season.peakHarem = Math.max(h.season.peakHarem, this.slotFemales(s).length);
     }
+    this.youngReactions();
     this.ambientThoughts();
 
     // 一頭への働きかけはその日限り。翌日からは浜を守る。
@@ -1584,6 +1587,41 @@ export class World {
     }
   }
 
+  /** 子どもたち：メスの子は母のまねをして世話を手伝い、オスの子や若いオスは主をうらやむ */
+  private youngReactions(): void {
+    const busy = new Set<number>();
+    for (const e of this.dayEvents) {
+      if (e.kind !== 'groom' || e.type === 'hoko') continue;
+      const mother = this.get(e.femaleId);
+      const pup = mother?.pupId != null ? this.get(mother.pupId) : undefined;
+      const h = this.get(e.maleId);
+      if (!mother || !pup || !h || !pup.alive || pup.sex !== 'F' || busy.has(pup.id) || !this.rng.chance(0.3)) continue;
+      busy.add(pup.id);
+      this.think(pup, 'pupHelpGroom', { about: h });
+      if (h.id === this.playerId) this.pushLog(`${pup.name}も母の${mother.name}のまねをして、${GROOM_ACT[e.type]}手伝った。`, 'player', pup.id);
+    }
+    // 交尾したか世話をされた主
+    const envied = new Set<number>();
+    for (const e of this.dayEvents) if ((e.kind === 'mate' && e.how === 'holder') || e.kind === 'groom') envied.add(e.maleId);
+    if (envied.size === 0) return;
+    for (const ind of this.living()) {
+      if (ind.sex !== 'M' || !ind.onBeach || busy.has(ind.id)) continue;
+      const age = this.age(ind);
+      if (age >= 5) continue;
+      // 子は母のいる浜の主を、若いオスはどこかの主を見ている
+      let h: Individual | undefined;
+      if (age === 0) {
+        const mother = ind.motherId != null ? this.get(ind.motherId) : undefined;
+        const holder = mother && mother.slot !== null ? this.get(this.slotHolders[mother.slot]) : undefined;
+        if (holder && envied.has(holder.id) && this.rng.chance(0.12)) h = holder;
+      } else if (this.rng.chance(0.04)) {
+        h = this.get(this.rng.pick([...envied]));
+      }
+      if (!h || h.id === ind.id) continue;
+      this.think(ind, 'youngEnvy', { about: h });
+    }
+  }
+
   private ambientThoughts(): void {
     for (const ind of this.living()) {
       if (!ind.onBeach || !this.rng.chance(ind.id === this.playerId ? 0.12 : 0.03)) continue;
@@ -1926,8 +1964,8 @@ export interface HeadRecord {
 /** 自分の欄に出すメスのセリフの優先順（あなたとの関わりが深いものから） */
 const FEMALE_LINE_PRIORITY = [
   'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
-  'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'fAdmire', 'fSoothed', 'newHolderFemale',
-  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'fIdle',
+  'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'pupHelpGroom', 'fAdmire', 'fSoothed', 'newHolderFemale',
+  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'youngEnvy', 'fIdle',
 ];
 
 /** 血統占有率の節目 */

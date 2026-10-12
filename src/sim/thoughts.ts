@@ -11,7 +11,7 @@ export type ThoughtKey =
   | 'rivalBigger' | 'youngWatch' | 'peripheralIdle' | 'holderIdle'
   | 'fMoveCrowded' | 'fMoveAttracted' | 'fGroomHoko' | 'fGroomHokoGroup' | 'fGroomWound' | 'fGroomFur'
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
-  | 'pupIdle' | 'pupMilk'
+  | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'youngEnvy'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
   | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
   | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup' | 'withdrew';
@@ -290,6 +290,14 @@ const T: Record<ThoughtKey, Entry> = {
     mood: 'happy',
     any: ['ちゅうちゅう……。', 'んくんく……ぷはっ。', 'おっぱいおいしい。', 'ぽかぽか。', 'もっとのむ。', 'おかあさん、あったかい。', 'おなかいっぱい。ねむい。'],
   },
+  pupHelpGroom: {
+    mood: 'happy',
+    any: ['お母さんのまねして、{other}の背中をゴシゴシ。', 'ゴシゴシ……こう？　お母さん、こう？', '{other}の背中、おっきい！', 'わたしも手伝った！　ほめられた！', 'お母さんみたいに上手になりたい。', 'ペロッ。……いたくない？', '{other}、くすぐったそう。'],
+  },
+  youngEnvy: {
+    mood: 'neutral',
+    any: ['{other}はいいなあ。みんなにお世話してもらって。', '{I}も大きくなったら、{other}みたいにハーレムを持つんだ。', '{other}、モテモテだ……。', 'いつか{I}も、あの浜の主に。', '{other}みたいになるには、いっぱい食べなきゃ。', 'ずるいなあ、{other}ばっかり。', '{I}だって、いつか……！'],
+  },
   orcaEscape: {
     mood: 'sad',
     any: ['ザバァッ！　……あ、危なかった。', 'シャチに追われた。生きた心地がしない。', 'ホコが重くて泳ぎにくい……', '黒い背びれが見えた。必死で逃げた。', '仲間がひとり、帰ってこなかった。', '海は豊かだけど、怖い。'],
@@ -387,6 +395,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   fPupLost: sit('子を喧嘩で亡くしたメス', 'メス', null, HER),
   pupIdle: sit('子どものひとりごと', '子ども・冬', null, []),
   pupMilk: sit('乳を飲む子ども', '子ども・冬', null, []),
+  pupHelpGroom: sit('母のまねで世話を手伝う子（メス）', '子ども・冬', 'ボス', []),
+  youngEnvy: sit('主をうらやむ子・若いオス', '子ども・冬', '主', []),
   orcaEscape: sit('シャチから逃げた', '子ども・冬', null, [...SIZE, ...AGE]),
   fat: sit('冬によく太った', '子ども・冬', null, [...SIZE, ...AGE]),
   thin: sit('冬に痩せた', '子ども・冬', null, [...SIZE, ...AGE]),

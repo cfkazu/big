@@ -468,3 +468,25 @@ describe('何頭かでなめたとき', () => {
     for (const t of [...said.values()].flat()) expect(t).not.toMatch(/[{}]/);
   });
 });
+
+describe('子どもたち', () => {
+  it('メスの子は母のまねで世話を手伝い、オスの子や若いオスは主をうらやむ', () => {
+    const w = World.create(12, 0);
+    const said = new Map<string, { text: string; sex: string; age: number }[]>();
+    const ww = w as unknown as { think: (ind: { sex: string; thought: { text: string } | null; ageAt(y: number): number }, key: string, ctx: unknown, prob?: number) => void };
+    const orig = ww.think.bind(w);
+    ww.think = (ind, key, ctx, prob) => {
+      const before = ind.thought;
+      orig(ind, key, ctx, prob);
+      if (ind.thought !== before && (key === 'pupHelpGroom' || key === 'youngEnvy')) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
+    };
+    for (let y = 0; y < 3; y++) w.simulateYearAuto();
+    const help = said.get('pupHelpGroom') ?? [];
+    const envy = said.get('youngEnvy') ?? [];
+    expect(help.length).toBeGreaterThan(0);
+    expect(envy.length).toBeGreaterThan(0);
+    expect(help.every((x) => x.sex === 'F' && x.age === 0)).toBe(true);
+    expect(envy.every((x) => x.sex === 'M' && x.age < 5)).toBe(true);
+    for (const x of [...help, ...envy]) expect(x.text).not.toMatch(/[{}]|誰か/);
+  });
+});
