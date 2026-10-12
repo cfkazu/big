@@ -1386,6 +1386,24 @@ export class World {
         this.think(f, fk, { about: h }, 0.12);
       }
     }
+    this.groupLickThoughts();
+  }
+
+  /** 同じ日に何頭かがホコをなめたら、ときどきそれ専用のセリフにする */
+  private groupLickThoughts(): void {
+    const lickers = new Map<number, Set<number>>();
+    for (const e of this.dayEvents) {
+      if (e.kind !== 'groom' || e.type !== 'hoko') continue;
+      lickers.set(e.maleId, (lickers.get(e.maleId) ?? new Set()).add(e.femaleId));
+    }
+    for (const [mid, ids] of lickers) {
+      const m = this.get(mid);
+      const fs = [...ids].map((id) => this.get(id)).filter((f): f is Individual => !!f && f.alive);
+      if (!m || fs.length < 2) continue;
+      const names = fs.length <= 3 ? fs.map((f) => f.name).join('と') : `${fs[0].name}と${fs[1].name}たち`;
+      this.think(m, 'groomedHokoGroup', { other: names, n: fs.length }, m.id === this.playerId ? 0.4 : 0.2);
+      this.think(this.rng.pick(fs), 'fGroomHokoGroup', { about: m, n: fs.length }, 0.3);
+    }
   }
 
   private matingPhase(): void {
@@ -1907,7 +1925,7 @@ export interface HeadRecord {
 
 /** 自分の欄に出すメスのセリフの優先順（あなたとの関わりが深いものから） */
 const FEMALE_LINE_PRIORITY = [
-  'fCourtAccept', 'fMated', 'fGroomHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
+  'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
   'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'fAdmire', 'fSoothed', 'newHolderFemale',
   'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'fIdle',
 ];

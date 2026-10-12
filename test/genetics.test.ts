@@ -450,3 +450,21 @@ describe('セリフ帳', () => {
     for (const key of Object.keys(SITUATIONS) as (keyof typeof SITUATIONS)[]) expect(builtinLines(key).length, key).toBeGreaterThanOrEqual(5);
   });
 });
+
+describe('何頭かでなめたとき', () => {
+  it('同じ日に2頭以上がホコをなめると、ときどき専用のセリフが出る', () => {
+    const w = World.create(11, 0);
+    const said = new Map<string, string[]>();
+    const ww = w as unknown as { think: (ind: { thought: { key?: string; text: string } | null }, key: string, ctx: unknown, prob?: number) => void };
+    const orig = ww.think.bind(w);
+    ww.think = (ind, key, ctx, prob) => {
+      const before = ind.thought;
+      orig(ind, key, ctx, prob);
+      if (ind.thought !== before && (key === 'groomedHokoGroup' || key === 'fGroomHokoGroup')) said.set(key, [...(said.get(key) ?? []), ind.thought!.text]);
+    };
+    for (let y = 0; y < 3; y++) w.simulateYearAuto();
+    expect(said.get('groomedHokoGroup')?.length ?? 0).toBeGreaterThan(0);
+    expect(said.get('fGroomHokoGroup')?.length ?? 0).toBeGreaterThan(0);
+    for (const t of [...said.values()].flat()) expect(t).not.toMatch(/[{}]/);
+  });
+});

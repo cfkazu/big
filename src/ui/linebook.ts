@@ -17,7 +17,7 @@ const KIND_LABEL: Record<'any' | 'brash' | 'timid', string> = { any: 'どんな�
 function tokens(sit: Situation): { raw: string; shown: string; hint: string }[] {
   const out = [{ raw: '{I}', shown: '〈自分〉', hint: '俺・わたし・わし など、話す個体の一人称' }];
   if (sit.other) out.push({ raw: '{other}', shown: `〈${sit.other}〉`, hint: `${sit.other}の名前` });
-  if (sit.count) out.push({ raw: '{n}', shown: '〈回数〉', hint: 'この季につがった回数' });
+  if (sit.count) out.push({ raw: '{n}', shown: `〈${sit.count.label}〉`, hint: sit.count.hint });
   return out;
 }
 
@@ -27,8 +27,9 @@ const toRaw = (text: string, sit: Situation) => tokens(sit).reduce((s, t) => s.r
 function sample(sit: Situation, raw: string): string {
   const me = sit.group === 'メス' ? 'わたし' : sit.group === 'オス' ? '俺' : 'ぼく';
   const o = sit.other ?? '';
-  const other = o === 'メス' ? 'ウミラ' : o === '子' ? 'ミナモ' : /主|ボス/.test(o) ? 'ゴンタ' : 'ドスケ';
-  return raw.replaceAll('{I}', me).replaceAll('{other}', other).replaceAll('{n}', '7');
+  const other = o === 'メス' ? 'ウミラ' : o === 'メスたち' ? 'ウミラとミナモ' : o === '子' ? 'ミナモ' : /主|ボス/.test(o) ? 'ゴンタ' : 'ドスケ';
+  const n = sit.count?.label === '頭数' ? '2' : '7';
+  return raw.replaceAll('{I}', me).replaceAll('{other}', other).replaceAll('{n}', n);
 }
 
 /** セリフを、差し込みの部分だけ色を変えて並べる */
