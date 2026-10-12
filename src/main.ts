@@ -129,7 +129,8 @@ class Game implements GameView {
         const win = e.winnerId === pid;
         const opp = w.get(e.aId === pid ? e.bId : e.aId)?.name ?? '相手';
         const how = e.kind === 'display' ? '見せ合い' : '取っ組み合い';
-        msgs.push({ text: `${how}で${opp}に${win ? '勝った！' : '負けた……'}`, win });
+        if (e.kind === 'display' && e.withdrew) msgs.push({ text: `${opp}とのにらみ合いから身を引いた`, win: false });
+        else msgs.push({ text: `${how}で${opp}に${win ? '勝った！' : '負けた……'}`, win });
       }
       if (e.kind === 'takeover' && e.newId === pid) msgs.push({ text: '浜とハーレムを手に入れた！', win: true });
       if (e.kind === 'takeover' && e.oldId === pid) msgs.push({ text: '浜とハーレムを失った……', win: false });
@@ -276,7 +277,15 @@ class Game implements GameView {
           h(
             'button',
             { class: 'btn item', onclick: () => done(t.id) },
-            h('span', null, t.isHolder ? '♛ ' : '', m.name, h('span', { class: 'sub' }, ` ${w.age(m)}歳・${Math.round(bodyMass(m, w.year))}kg${t.isHolder ? `・ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`)),
+            h(
+              'span',
+              null,
+              t.isHolder ? '♛ ' : '',
+              m.name,
+              h('span', { class: 'sub' }, ` ${w.age(m)}歳・${Math.round(bodyMass(m, w.year))}kg${t.isHolder ? `・ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`),
+              // 主は繁殖期の後半ほど痩せて弱る。挑む時期を選ぶ手がかり。
+              t.isHolder ? h('span', { class: m.condition < 0.4 ? 'down' : 'sub' }, `・脂肪${Math.round(m.condition * 100)}%${m.condition < 0.4 ? '（痩せてきた）' : ''}`) : null,
+            ),
             h('span', { class: 'sub' }, verdict),
             h('span', null, `推定${t.perceived.toFixed(1)}cm`),
           ),
@@ -815,7 +824,9 @@ class Game implements GameView {
       const desc =
         pr.kind === 'challenged'
           ? `受けて立つ：ホコを見せ合う。差がはっきりすれば小さい方が引き、僅差ならもう一度、取っ組み合うかを選べる。引く：戦わずに負け${lose ? '、浜とハーレムを明け渡す' : '。ケガはしない'}。`
-          : `見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければ深手を負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
+          : pr.challenger
+            ? '見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければケガを負う。引く：自分から挑んだ勝負なので、ここで身を引いても序列の下がり方は半分で済む。'
+            : `見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければケガを負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
       return h(
         'div',
         null,
@@ -949,7 +960,7 @@ class Game implements GameView {
         'div',
         null,
         h('h2', null, '跡継ぎを選ぶ'),
-        h('div', { class: 'sub' }, `${prev?.name ?? '当主'}の血を引くオスたち。血の濃い順。星はホコの素質を群れの平均と比べたもの（★★★が平均）。素質の高い子を継がせるほど、一族は代を重ねて大きくなる。`),
+        h('div', { class: 'sub' }, `${prev?.name ?? '当主'}の血を引くオスたち。血の濃い順。星はホコの素質を群れの平均と比べたもの（★★★が平均）。素質の高い子を継がせるほど、一族は代を重ねて大きくなる。戦略の型も遺伝子で決まるので、衛星型や忍び型の父からも主型の息子が生まれる。`),
         box,
       );
     });
@@ -993,10 +1004,13 @@ function founderBlurb(kind: FounderOption['kind'], ind: Individual): { tag: stri
       return { tag: '並・ふつう', note: '群れの中ほど。相手を選び、駆け引きで浜を取る。' };
     case 'small':
       return { tag: '小兵・むずかしい', note: '見せ合いでは分が悪い。そのぶん精巣が大きく、うろついて見張りの外のメスとつがえば、精子のくじ引きで勝てる。' };
-    case 'odd':
+    case 'odd': {
+      // 平均では主型と同じくらい子を残すが、上限は低い。型は遺伝子で決まるので息子は主型にもなりうる。
+      const caveat = '毎年安定して子を残せるが、ハーレムは持てないので血を大きく広げるのは難しい。息子が主型に生まれれば、大物の道に戻れる。';
       return ind.base.tactic === 'S'
-        ? { tag: '変わり種', note: '衛星型。白いたてがみで主のそばに控え、主が喧嘩する隙につがう。' }
-        : { tag: '変わり種', note: '忍び型。メスに似た姿でハーレムに紛れ込む。体は小さいが精巣は大きい。' };
+        ? { tag: '変わり種', note: `衛星型。白いたてがみで主のそばに控え、主が喧嘩する隙につがう。${caveat}` }
+        : { tag: '変わり種', note: `忍び型。メスに似た姿でハーレムに紛れ込む。体は小さいが精巣は大きい。${caveat}` };
+    }
   }
 }
 

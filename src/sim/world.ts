@@ -10,6 +10,7 @@ import {
   spermCapacity,
   spermDaily,
   testisMass,
+  tacticLabel,
   type DeathCause,
 } from './individual';
 import { geneticHoko, potentialStars, starText } from './lineage';
@@ -65,12 +66,14 @@ export type Prompt =
       selfBody: number;
       /** 取っ組み合いでプレイヤーが勝つ見込み */
       winChance: number;
+      /** プレイヤーが挑んだ側か */
+      challenger: boolean;
     };
 
 export type Answer = 'accept' | 'retreat';
 
 export type WorldEvent =
-  | { kind: 'display'; aId: number; bId: number; winnerId: number; slot: number | null }
+  | { kind: 'display'; aId: number; bId: number; winnerId: number; slot: number | null; withdrew?: boolean }
   | { kind: 'fight'; aId: number; bId: number; winnerId: number; slot: number | null }
   | { kind: 'takeover'; slot: number; newId: number; oldId: number | null }
   | { kind: 'mate'; maleId: number; femaleId: number; how: 'holder' | 'satellite' | 'sneaker' | 'peripheral' }
@@ -390,7 +393,8 @@ export class World {
         case 'fight':
           if (e.aId === pid || e.bId === pid) {
             const opp = name(e.aId === pid ? e.bId : e.aId);
-            lines.push(`${e.kind === 'display' ? '見せ合い' : '取っ組み合い'}で${opp}に${e.winnerId === pid ? '勝った' : '負けた'}`);
+            if (e.kind === 'display' && e.withdrew) lines.push(`${opp}とのにらみ合いから身を引いた`);
+            else lines.push(`${e.kind === 'display' ? '見せ合い' : '取っ組み合い'}で${opp}に${e.winnerId === pid ? '勝った' : '負けた'}`);
           }
           break;
         case 'takeover':
@@ -742,7 +746,7 @@ export class World {
       if (ind.id === this.playerId && this.playerStance.kind === 'rest') drain = -0.012;
       ind.condition = Math.max(0, ind.condition - drain);
       if (ind.sex === 'M') ind.sperm = Math.min(spermCapacity(ind, y), ind.sperm + spermDaily(ind, y));
-      ind.injury = Math.max(0, ind.injury - 0.004);
+      ind.injury = Math.max(0, ind.injury - 0.008);
     }
 
     // 2. 出産
@@ -951,8 +955,14 @@ export class World {
         oppBody: bodyMass(opp, this.year),
         selfBody: bodyMass(me, this.year),
         winChance: this.fightOdds(me, opp, slot !== null && me === b, slot !== null && opp === b),
+        challenger: me === a,
       };
       if (ans === 'retreat') {
+        if (me === a) {
+          // 自分から挑んだ勝負は、にらみ合いの段階なら身を引ける（序列の下がり方は半分）
+          this.withdraw(me, opp, slot);
+          return;
+        }
         this.pushLog(`${opp.name}とのにらみ合いで、先に目をそらした。`, 'player', me.id);
         this.resolveWin(opp, me, 'display', slot);
         return;
@@ -972,8 +982,8 @@ export class World {
     const [w, l] = aWins ? [a, b] : [b, a];
     w.condition = Math.max(0, w.condition - 0.025);
     l.condition = Math.max(0, l.condition - 0.035);
-    w.injury = Math.min(1, w.injury + this.rng.range(0, 0.08));
-    l.injury = Math.min(1, l.injury + this.rng.range(0.08, 0.25));
+    w.injury = Math.min(1, w.injury + this.rng.range(0, 0.06));
+    l.injury = Math.min(1, l.injury + this.rng.range(0.05, 0.18));
     this.resolveWin(w, l, 'fight', slot);
     // ハーレムの中での喧嘩は子を踏み潰す
     if (slot !== null) {
@@ -990,6 +1000,15 @@ export class World {
         }
       }
     }
+  }
+
+  /** 挑んだ側が、にらみ合いで取っ組み合いを避けて身を引く */
+  private withdraw(me: Individual, opp: Individual, slot: number | null): void {
+    const e = 1 / (1 + Math.pow(10, (me.elo - opp.elo) / 400));
+    opp.elo += 8 * (1 - e);
+    me.elo -= 8 * (1 - e);
+    this.dayEvents.push({ kind: 'display', aId: opp.id, bId: me.id, winnerId: opp.id, slot, withdrew: true });
+    this.pushLog(`${opp.name}とにらみ合ったが、組み合う前に身を引いた。`, 'player', me.id);
   }
 
   private resolveWin(w: Individual, l: Individual, kind: 'display' | 'fight', slot: number | null): void {
@@ -1153,7 +1172,7 @@ export class World {
     const pAccept = Math.min(0.97, 0.35 + 0.65 * f.loyalty + (f.base.boldness < 0.4 ? 0.1 : 0));
     if (this.rng.chance(pAccept)) {
       // 頼まれての世話は、ふだんの気まぐれな世話より念入り
-      if (st.type === 'wound') p.injury = Math.max(0, p.injury - 0.05);
+      if (st.type === 'wound') p.injury = Math.max(0, p.injury - 0.1);
       else if (st.type === 'hoko') p.shine = Math.min(0.15, p.shine + 0.05);
       else p.condition = Math.min(1, p.condition + 0.005);
       f.loyalty = Math.min(1, f.loyalty + 0.03);
@@ -1290,7 +1309,7 @@ export class World {
         let type: 'hoko' | 'wound' | 'fur';
         if (h.injury > 0.12 && this.rng.chance(0.6)) type = 'wound';
         else type = this.rng.chance(0.45) ? 'hoko' : 'fur';
-        if (type === 'wound') h.injury = Math.max(0, h.injury - 0.025);
+        if (type === 'wound') h.injury = Math.max(0, h.injury - 0.05);
         else if (type === 'hoko') h.shine = Math.min(0.12, h.shine + 0.025);
         else h.condition = Math.min(1, h.condition + 0.002);
         f.loyalty = Math.min(1, f.loyalty + 0.06);
@@ -1466,7 +1485,7 @@ export class World {
     // 子の素質（オスはホコの素質、メスは息子に伝わる遺伝的な値）
     const potential = pup.sex === 'M' ? pup.base.hoko : geneticHoko(pup);
     const stars = potentialStars(potential, this.herdHokoMean());
-    const label = `${pup.sex === 'M' ? 'オス' : 'メス'}・素質${starText(stars)}`;
+    const label = `${pup.sex === 'M' ? `オス・${tacticLabel(pup.base.tactic)}` : 'メス'}・素質${starText(stars)}`;
     if (father && father.id === this.playerId) {
       this.pushLog(`${f.name}があなたの子「${pup.name}」（${label}）を産んだ。`, 'player', pup.id);
     } else if (pup.dynasty > 0) {
@@ -1552,7 +1571,9 @@ export class World {
     } else if (ind.pregnancy) upkeep += 0.08;
     // 大きな体ほど一度に多く食べられる
     const intake = ind.sex === 'M' && age >= 4 ? 1.3 : 1;
-    return { gain: food * effort * intake * (0.7 + 0.3 * ind.base.vigor), upkeep };
+    // 繁殖期に絶食して痩せたオスほど、冬に必死に食べて取り戻す（代償的な採餌）
+    const hunger = ind.sex === 'M' && age >= 5 ? 1 + 0.6 * (1 - ind.condition) : 1;
+    return { gain: food * effort * intake * hunger * (0.7 + 0.3 * ind.base.vigor), upkeep };
   }
 
   /** シャチに襲われる確率。大きなホコほど泳ぎが遅く、狙われやすい。 */
