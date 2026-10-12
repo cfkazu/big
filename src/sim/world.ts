@@ -1505,7 +1505,8 @@ export class World {
     else if (how === 'satellite') this.think(m, 'satelliteSuccess', {}, 0.6);
     else if (n >= 3 && n % 2 === 1) this.think(m, 'matedMany', { n }, 0.6);
     else this.think(m, 'mated', { about: f }, 0.5);
-    this.think(f, 'fMated', { about: m }, 0.1);
+    // プレイヤーとつがったメスは、たいてい何かひと言いう
+    this.think(f, 'fMated', { about: m }, m.id === this.playerId ? 0.7 : 0.1);
     if (m.id === this.playerId) this.pushLog(`${f.name}とつがった。（今季${n}回目・射精${amount.toFixed(0)}億）`, 'player', m.id);
   }
 
@@ -1804,7 +1805,8 @@ export class World {
     if (male && this.age(male) >= 4) {
       cm = this.hoko(male);
       const mean = this.herdHokoMean();
-      if (cm >= mean + 4) tags.push('big');
+      if (cm >= mean + 9) tags.push('huge', 'big');
+      else if (cm >= mean + 4) tags.push('big');
       else if (cm <= mean - 4) tags.push('small');
     }
     if (female && this.age(female) >= 3) {

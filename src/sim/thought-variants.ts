@@ -2,14 +2,14 @@ import type { ThoughtKey } from './thoughts';
 
 /**
  * 状況に合わせたセリフ。当てはまる札があれば、ふつうのセリフより優先して選ばれる。
- *  big / small：話題のオス（自分か相手）のホコが、群れの平均よりはっきり大きい／小さい
+ *  huge / big / small：話題のオス（自分か相手）のホコが、群れの平均より並外れて大きい（+9cm）／はっきり大きい（+4cm）／小さい（−4cm）
  *  fond / cold：メスの愛着が高い／低い
  *  hokoFan / gentleFan：メスの好みが、大きなホコ／穏やかなオス
  *  old / young：自分が年寄り／若い
  *  rivalBig / rivalSmall / rivalEven：相手のオスのホコが自分よりはっきり大きい／小さい／ほぼ同じ
  * {cm} は話題のオスのホコの長さ、{other} は相手の名前、{I} は一人称。
  */
-export type Tag = 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young' | 'rivalBig' | 'rivalSmall' | 'rivalEven';
+export type Tag = 'huge' | 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young' | 'rivalBig' | 'rivalSmall' | 'rivalEven';
 
 export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>>> = {
   // ─── メスがホコをなめて綺麗にしたとき ───
@@ -42,14 +42,18 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   // ─── 交尾 ───
   fMated: {
-    big: ['{other}のホコ、噂どおりだったわ。'],
-    small: ['……まあ、大きさがすべてじゃないし。'],
-    fond: ['{other}の子なら、きっと強い子になる。'],
-    gentleFan: ['{other}は優しかった。'],
+    huge: ['こんなに大きなホコでついてもらえるなんて、幸せ。', '{cm}cm……まだ体が震えてる。', 'あんなに大きいの、はじめて。'],
+    big: ['こんなに大きなホコでついてもらえるなんて、幸せ。', '{other}のホコ、噂どおりだったわ。', 'さすが立派なホコ。言うことなしね。'],
+    small: ['……まあ、大きさがすべてじゃないし。', 'ホコは小さめだけど、一生懸命だったわ。', '思ってたより小さかった。……内緒ね。'],
+    fond: ['{other}の子なら、きっと強い子になる。', '{other}とつがえて、うれしい。'],
+    cold: ['……終わった？　じゃあ、あっち行って。'],
+    hokoFan: ['やっぱりホコは大きいほうがいいわ。'],
+    gentleFan: ['{other}は優しかった。', '乱暴じゃなくてよかった。'],
   },
   fCourtAccept: {
-    big: ['こんなに立派なホコの主なら、文句なしよ。'],
-    small: ['ホコは小さめだけど……ボスだもの。'],
+    huge: ['そんなに大きなホコでつかれたら、どうなっちゃうのかしら。'],
+    big: ['こんなに立派なホコの主なら、文句なしよ。', 'その大きなホコで、ついてちょうだい。'],
+    small: ['ホコは小さめだけど……ボスだもの。', '大きさより、気持ちよね。'],
     fond: ['待ってたのよ、{other}。'],
     hokoFan: ['その大きさ、たまらないわ。'],
     gentleFan: ['乱暴にしないでね。'],
@@ -60,10 +64,15 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
     cold: ['近寄らないで。'],
   },
   mated: {
-    big: ['{other}も{I}のホコに夢中だ。'],
-    small: ['小さくても、やることはやる。'],
+    huge: ['{I}の{cm}cmに、{other}も声が出なかったようだ。', 'この大きさを受け止めるとは、{other}もたいしたものだ。'],
+    big: ['{other}も{I}のホコに夢中だ。', '{I}の{cm}cmに、{other}も満足そうだ。'],
+    small: ['小さくても、やることはやる。', '{other}、大きさのことは何も言わなかった。優しい子だ。'],
+    fond: ['{other}は{I}を待っていたようだ。'],
+    cold: ['{other}、終わるなりそっぽを向いた……'],
+    old: ['この歳でも、まだまだやれる。'],
   },
   matedMany: {
+    huge: ['この{cm}cm、浜じゅうのメスが放っておかない。'],
     big: ['この{cm}cm、休む暇もない。'],
     small: ['大きさより数だ。'],
   },
