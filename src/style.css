@@ -505,6 +505,15 @@ details.genome[open] summary::before {
   box-shadow: 0 0 0 2px var(--gray0);
 }
 
+.thought.her {
+  box-shadow: 0 0 0 2px var(--pink);
+  cursor: pointer;
+}
+
+.thought .speaker {
+  color: var(--pink);
+}
+
 .genes {
   display: grid;
   grid-template-columns: 64px 1fr 1fr;

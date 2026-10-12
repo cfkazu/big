@@ -29,6 +29,10 @@ export interface Thought {
   year: number;
   day: number;
   mood: 'happy' | 'sad' | 'angry' | 'neutral' | 'love' | 'scheme';
+  /** どの場面のセリフか（ThoughtKey） */
+  key?: string;
+  /** 誰について言ったか */
+  aboutId?: number;
 }
 
 export type DeathCause = 'old' | 'orca' | 'starve' | 'wound' | 'sick' | 'crushed' | 'orphan' | 'weak';

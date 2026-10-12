@@ -80,9 +80,9 @@ const T: Record<ThoughtKey, Entry> = {
   },
   groomedHoko: {
     mood: 'happy',
-    brash: ['{other}にホコを磨かせた。ツヤが違う。'],
-    timid: ['{other}がホコの手入れをしてくれた。照れる。'],
-    any: ['{other}がホコを手入れしてくれた。今日は映える。', 'ホコがぴかぴかだ。'],
+    brash: ['{other}にホコをなめさせた。ツヤが違う。'],
+    timid: ['{other}がホコをなめて綺麗にしてくれた。照れる。'],
+    any: ['{other}がホコをなめて綺麗にしてくれた。今日は映える。', 'ホコがぴかぴかだ。'],
   },
   groomedWound: {
     mood: 'happy',
@@ -167,7 +167,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   fGroomHoko: {
     mood: 'neutral',
-    any: ['今日もボスのホコを磨いてあげた。まんざらでもない顔。', 'ホコの手入れ。これも務めのうち。', 'ツヤが出てきたわ。わたしの腕前ね。'],
+    any: ['今日もボスのホコをなめて綺麗にしてあげた。まんざらでもない顔。', 'ホコをなめるのも、務めのうち。', 'ツヤが出てきたわ。わたしの舌の腕前ね。'],
   },
   fGroomWound: {
     mood: 'neutral',
@@ -309,7 +309,7 @@ export function makeThought(
   ind: Individual,
   key: ThoughtKey,
   rng: Rng,
-  ctx: { year: number; day: number; other?: string; n?: number; tags?: Tag[]; cm?: number },
+  ctx: { year: number; day: number; other?: string; n?: number; tags?: Tag[]; cm?: number; aboutId?: number },
 ): Thought {
   const e = T[key];
   let pool = e.any;
@@ -327,5 +327,5 @@ export function makeThought(
     .replaceAll('{other}', ctx.other ?? '誰か')
     .replaceAll('{n}', String(ctx.n ?? 0))
     .replaceAll('{cm}', String(Math.round(ctx.cm ?? 0)));
-  return { text, year: ctx.year, day: ctx.day, mood: e.mood };
+  return { text, year: ctx.year, day: ctx.day, mood: e.mood, key, aboutId: ctx.aboutId };
 }

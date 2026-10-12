@@ -309,7 +309,7 @@ describe('きのうのできごと', () => {
     const g = w.runDay();
     let r = g.next();
     while (!r.done) r = g.next('accept');
-    expect(w.playerDigest().some((t) => t.includes(f.name) && t.includes('ホコの手入れ'))).toBe(true);
+    expect(w.playerDigest().some((t) => t.includes(f.name) && t.includes('ホコをなめて綺麗に'))).toBe(true);
   });
 });
 
@@ -392,5 +392,32 @@ describe('発情の見込み', () => {
     expect(now).toBe(expectNow);
     expect(later).toBe(expectLater);
     expect(w.estrusRemaining()).toBeGreaterThanOrEqual(now + later);
+  });
+});
+
+describe('自分の欄のセリフ', () => {
+  it('前の日にハーレムのメスがあなたに言ったことを優先する', () => {
+    const w = World.create(81, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    const old = w.get(w.slotHolders[0]);
+    if (old) old.slot = null;
+    w.slotHolders[0] = p.id;
+    p.slot = 0;
+    const [f1, f2] = w.living().filter((i) => i.sex === 'F' && w.age(i) >= 4).slice(0, 2);
+    for (const f of [f1, f2]) {
+      f.slot = 0;
+      f.onBeach = true;
+    }
+    (w as unknown as { invalidateSlots(): void }).invalidateSlots();
+    w.day = 5;
+    p.thought = { text: '自分のつぶやき', year: w.year, day: 4, mood: 'neutral' };
+    f1.thought = { text: 'お日さまが気持ちいい。', year: w.year, day: 4, mood: 'neutral', key: 'fIdle' };
+    f2.thought = { text: 'ボスのホコ、今日も愛おしい。', year: w.year, day: 4, mood: 'love', key: 'fGroomHoko', aboutId: p.id };
+    expect(w.featuredThought()!.speaker.id).toBe(f2.id);
+    f1.thought = null;
+    f2.thought = null;
+    expect(w.featuredThought()!.speaker.id).toBe(p.id);
   });
 });

@@ -12,6 +12,7 @@ import {
   type GroomType,
   type Stance,
   type FounderOption,
+  GROOM_ACT,
   type LogKind,
   type Prompt,
   type SeasonSummary,
@@ -455,8 +456,7 @@ class Game implements GameView {
           { class: `btn choice ${opts.primary ? 'primary' : ''}`, disabled: opts.disabled, onclick: () => done(stance) },
           h('div', { class: 'btn-body' }, h('div', { class: 'name' }, title), h('div', { class: 'sub' }, desc)),
         );
-      const groom = (type: GroomType, label: string, effect: string) =>
-        choice(`${label}をさせる`, effect, { kind: 'groom', femaleId: f.id, type });
+      const groom = (type: GroomType, effect: string) => choice(`${GROOM_ACT[type]}させる`, effect, { kind: 'groom', femaleId: f.id, type });
       return h(
         'div',
         null,
@@ -490,9 +490,9 @@ class Game implements GameView {
           choice('毛づくろいしてあげる', '主のほうから背中をかいてやる。機嫌が大きく良くなる。', { kind: 'tend', femaleId: f.id }),
           choice('寄り添って守る', `一日そばにつく。ほかのオスを寄せつけず、${pup?.alive ? '子が喧嘩で踏まれることもない。' : '発情中ならまず自分がつがえる。'}`, { kind: 'escort', femaleId: f.id }),
           h('h3', null, '世話をさせる'),
-          groom('hoko', 'ホコの手入れ', `ツヤが出て見せ合いで有利に。いまのツヤ +${Math.round(p.shine * 100)}%`),
-          groom('wound', '傷の手当て', `傷が癒える。いまのケガ ${Math.round(p.injury * 100)}%`),
-          groom('fur', '毛づくろい', '少し脂肪が戻る。機嫌の悪いメスは嫌がる。'),
+          groom('hoko', `なめてもらうとツヤが出て、見せ合いで有利に。いまのツヤ +${Math.round(p.shine * 100)}%`),
+          groom('wound', `傷が癒える。いまのケガ ${Math.round(p.injury * 100)}%`),
+          groom('fur', '少し脂肪が戻る。機嫌の悪いメスは嫌がる。'),
         ),
         h('div', { class: 'sub', style: 'margin-top:6px' }, 'どれもその日限り。一頭にかかりきりの日は、ほかのメスへの見張りが手薄になる。'),
         h('div', { class: 'row' }, canGoBack ? btn('一覧へ戻る', () => done('back')) : null, btn('やめる', () => done(null))),
@@ -641,7 +641,7 @@ class Game implements GameView {
         { class: 'paper' },
         h('h3', { style: 'color:#733e39' }, 'ハマトドとは'),
         h('div', null, '北の浜で群れをつくる大型の海獣。オスは「ホコ」と呼ばれる生殖器を見せ合い、その大きさで序列を決める。'),
-        h('div', { style: 'margin-top:8px' }, '序列の高いオスは浜を占め、メスを囲う。ハーレムのメスたちは主の世話を焼き、ホコの手入れまでする。'),
+        h('div', { style: 'margin-top:8px' }, '序列の高いオスは浜を占め、メスを囲う。ハーレムのメスたちは主の世話を焼き、ホコをなめて綺麗にまでする。'),
         h('div', { style: 'margin-top:8px' }, 'だが独占は完全ではない。メスは気に入らなければ去り、衛星型や忍び型のオスが隙を突く。'),
       ),
     );
@@ -800,7 +800,7 @@ class Game implements GameView {
           '海で食べる：浜を離れて食べ、脂肪を取り戻す。主がこれを選ぶと、その日はほとんど見張れない。',
           '守る（主のみ）：見張れるメスが1.3倍に増え、取っ組み合いでも粘る。',
           'おまかせ（主のみ）：毎朝ハーレムの様子を見て、守る・なだめる・機嫌の悪いメスに構う・見張りの外の発情メスに寄り添う、を自動で選ぶ。',
-          'メスに構う…（主のみ）：ハーレム全体をなだめる、一頭とつがう・毛づくろいしてあげる・寄り添って守る・世話（ホコの手入れ／傷の手当て／毛づくろい）をさせる。',
+          'メスに構う…（主のみ）：ハーレム全体をなだめる、一頭とつがう・毛づくろいしてあげる・寄り添って守る・世話（ホコをなめて綺麗にする／傷の手当て／毛づくろい）をさせる。',
         ),
         ...sec(
           '序列と勝負',
@@ -810,7 +810,7 @@ class Game implements GameView {
         ),
         ...sec(
           'ホコの大きさ',
-          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの脂肪で決まる「張り」が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。繁殖期の途中で痩せても、張りはその季節のあいだ変わらない。ハーレムのメスにホコの手入れをしてもらうとツヤが乗り、最大で1割ほど大きく見える（大きなハーレムの主ほど手入れされ、ますます大きく見える）。12歳を過ぎると少しずつ縮む。',
+          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの脂肪で決まる「張り」が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。繁殖期の途中で痩せても、張りはその季節のあいだ変わらない。ハーレムのメスにホコをなめて綺麗にしてもらうとツヤが乗り、最大で1割ほど大きく見える（大きなハーレムの主ほど手入れされ、ますます大きく見える）。12歳を過ぎると少しずつ縮む。',
         ),
         ...sec(
           '脂肪',

@@ -45,7 +45,8 @@ const ONE_DAY_HOLDER_STANCES = new Set(['court', 'groom', 'tend', 'escort', 'soo
 
 export type GroomType = 'hoko' | 'wound' | 'fur';
 
-export const GROOM_LABEL: Record<GroomType, string> = { hoko: 'ホコの手入れ', wound: '傷の手当て', fur: '毛づくろい' };
+/** 世話の言い回し。後ろに「させる」「してもらった」を付けて使う。ホコはなめて綺麗にする。 */
+export const GROOM_ACT: Record<GroomType, string> = { hoko: 'ホコをなめて綺麗に', wound: '傷の手当てを', fur: '毛づくろいを' };
 
 export type ForageStrategy = 'cautious' | 'normal' | 'greedy';
 
@@ -409,7 +410,7 @@ export class World {
           else if (s !== null && this.get(e.femaleId)?.slot === s) add(`がほかのオスとつがった`, name(e.femaleId));
           break;
         case 'groom':
-          if (e.maleId === pid) add(`に${e.type === 'hoko' ? 'ホコの手入れ' : e.type === 'wound' ? '傷の手当て' : '毛づくろい'}をしてもらった`, name(e.femaleId));
+          if (e.maleId === pid) add(`に${GROOM_ACT[e.type]}してもらった`, name(e.femaleId));
           break;
         case 'tend':
           if (e.maleId === pid) add('に構った', name(e.femaleId));
@@ -443,6 +444,27 @@ export class World {
       lines.push(`${names}${key}`);
     }
     return lines;
+  }
+
+  /**
+   * 自分の欄に出すセリフ。前の日にハーレムのメスが言ったことがあれば、それを優先する。
+   * あなたに向けたセリフ（手入れ・交尾・構ってもらったときなど）を先に選ぶ。
+   */
+  featuredThought(): { speaker: Individual; text: string } | null {
+    const p = this.player;
+    if (!p) return null;
+    const own = p.thought ? { speaker: p, text: p.thought.text } : null;
+    const s = this.slotOf(p);
+    if (this.phase !== 'breeding' || s === null) return own;
+    const recent = this.slotFemales(s).filter((f) => f.thought && f.thought.year === this.year && f.thought.day === this.day - 1);
+    if (recent.length === 0) return own;
+    const rank = (f: Individual) => {
+      const t = f.thought!;
+      const i = FEMALE_LINE_PRIORITY.indexOf(t.key ?? '');
+      return (t.aboutId === p.id ? 0 : 100) + (i < 0 ? 50 : i);
+    };
+    const best = [...recent].sort((a, b) => rank(a) - rank(b) || a.id - b.id)[0];
+    return { speaker: best, text: best.thought!.text };
   }
 
   /** 当主不在のまま年を進め、血を引くオスが生まれるのを待つ。経過年数を返す。 */
@@ -1207,7 +1229,7 @@ export class World {
     if (!p || st.kind !== 'groom') return;
     const s = this.slotOf(p);
     const f = this.get(st.femaleId);
-    const what = GROOM_LABEL[st.type];
+    const what = GROOM_ACT[st.type];
     if (s === null || !f || !f.alive || !f.onBeach || f.slot !== s) {
       this.pushLog(`${f?.name ?? 'そのメス'}はもうハーレムにいない。`, 'player', p.id);
       return;
@@ -1221,13 +1243,13 @@ export class World {
       f.loyalty = Math.min(1, f.loyalty + 0.03);
       p.season.groomed++;
       this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: p.id, type: st.type });
-      this.pushLog(`${f.name}に${what}をさせた。`, 'player', f.id);
+      this.pushLog(`${f.name}に${what}させた。`, 'player', f.id);
       this.think(p, st.type === 'hoko' ? 'groomedHoko' : st.type === 'wound' ? 'groomedWound' : 'groomedFur', { about: f });
       this.think(f, 'fOrderedOk', { about: p }, 0.7);
       return;
     }
     f.loyalty = Math.max(0, f.loyalty - 0.1);
-    this.pushLog(`${f.name}に${what}をさせようとしたが、そっぽを向かれた。`, 'player', f.id);
+    this.pushLog(`${f.name}に${what}させようとしたが、そっぽを向かれた。`, 'player', f.id);
     this.think(f, 'fOrderedNo', { about: p });
     this.think(p, 'orderRefused', { about: f }, 0.7);
     // 愛想を尽かしたメスは浜を出ていく
@@ -1765,7 +1787,7 @@ export class World {
     if (!ind.alive && key !== 'fPupLost') return;
     if (prob < 1 && !this.rng.chance(prob)) return;
     const { tags, cm } = this.thoughtTags(ind, ctx.about);
-    ind.thought = makeThought(ind, key, this.rng, { year: this.year, day: this.day, other: ctx.other ?? ctx.about?.name, n: ctx.n, tags, cm });
+    ind.thought = makeThought(ind, key, this.rng, { year: this.year, day: this.day, other: ctx.other ?? ctx.about?.name, n: ctx.n, tags, cm, aboutId: ctx.about?.id });
     if (ind.id === this.playerId) {
       this.pushLog(`「${ind.thought.text}」`, 'thought', ind.id);
     } else if (this.isPlayerHaremFemale(ind) || (ind.dynasty > 0 && this.rng.chance(0.3))) {
@@ -1881,6 +1903,13 @@ export interface HeadRecord {
   peakHarem: number;
 }
 
+/** 自分の欄に出すメスのセリフの優先順（あなたとの関わりが深いものから） */
+const FEMALE_LINE_PRIORITY = [
+  'fCourtAccept', 'fMated', 'fGroomHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
+  'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'fAdmire', 'fSoothed', 'newHolderFemale',
+  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'fIdle',
+];
+
 /** 血統占有率の節目 */
 export const MILESTONES = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5];
 
@@ -1898,7 +1927,7 @@ function autoLabel(w: World, s: Stance): string {
     case 'soothe': return '浜が騒がしいので、ハーレムをなだめる';
     case 'escort': return `見張りの外にいる発情中の${name(s.femaleId)}に寄り添う`;
     case 'tend': return `機嫌の悪い${name(s.femaleId)}を毛づくろいしてやる`;
-    case 'groom': return `${name(s.femaleId)}に${GROOM_LABEL[s.type]}をさせる`;
+    case 'groom': return `${name(s.femaleId)}に${GROOM_ACT[s.type]}させる`;
     case 'rest': {
       // 理由で文言を分ける（メスが何頭もいるのに「いない」と読めないように）
       const p = w.player;

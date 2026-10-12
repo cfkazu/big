@@ -10,7 +10,7 @@ import {
   type Individual,
 } from '../sim/individual';
 import { bloodEstimate, hokoPotential, potentialStars, starText } from '../sim/lineage';
-import { BREED_DAYS, GROOM_LABEL, MILESTONES, causeLabel, type LogKind, type World } from '../sim/world';
+import { BREED_DAYS, GROOM_ACT, MILESTONES, causeLabel, type LogKind, type World } from '../sim/world';
 import { P } from '../render/palette';
 import { lineChart } from './chart';
 import { bar, btn, clear, h } from './dom';
@@ -96,7 +96,16 @@ function playerCard(g: GameView): HTMLElement {
     stat('今季交尾', h('span'), `${p.season.matings}回`),
     stat('子', h('span'), `${p.childIds.length}頭`),
   );
-  const thought = p.thought ? h('div', { class: 'thought' }, `「${p.thought.text}」`) : null;
+  // 前の日にハーレムのメスが言ったことがあれば、自分のつぶやきより優先して出す
+  const ft = w.featuredThought();
+  const thought = ft
+    ? h(
+        'div',
+        { class: `thought ${ft.speaker.id !== p.id ? 'her' : ''}`, onclick: ft.speaker.id !== p.id ? () => g.select(ft.speaker.id) : undefined },
+        ft.speaker.id !== p.id ? h('span', { class: 'speaker' }, ft.speaker.name) : null,
+        `「${ft.text}」`,
+      )
+    : null;
   // きのうのできごと（くわしくはログ）
   const digest = w.playerDigest();
   const yesterday =
@@ -203,7 +212,7 @@ function planText(w: World): string {
     }
     case 'groom': {
       const f = w.get(s.femaleId);
-      return f ? `${f.name}に${GROOM_LABEL[s.type]}をさせる。今日限り` : '世話をさせる相手がいない';
+      return f ? `${f.name}に${GROOM_ACT[s.type]}させる。今日限り` : '世話をさせる相手がいない';
     }
     case 'tend': {
       const f = w.get(s.femaleId);
