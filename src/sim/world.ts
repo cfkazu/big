@@ -1085,6 +1085,9 @@ export class World {
 
     // 主が負けたら枠を明け渡す
     if (slot !== null && this.slotHolders[slot] === l.id) {
+      // 別の浜の主が奪ったときは、もとの浜を空ける（主が持てる浜はひとつ）
+      const prevSlot = this.slotOf(w);
+      if (prevSlot !== null && prevSlot !== slot) this.slotHolders[prevSlot] = null;
       this.slotHolders[slot] = w.id;
       w.slot = slot;
       l.slot = null;

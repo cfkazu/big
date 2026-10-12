@@ -327,7 +327,7 @@ class Game implements GameView {
         'div',
         null,
         h('h2', null, '誰に挑む？'),
-        late ? h('div', { class: 'note', style: 'margin-bottom:4px' }, `この浜で発情を残しているメスは、あと${remaining}頭ほど。いま浜を奪っても、今季はつがえないかもしれない。`) : null,
+        late ? h('div', { class: 'note', style: 'margin-bottom:4px' }, remaining > 0 ? `この浜で発情を残しているメスは、あと${remaining}頭ほど。いま浜を奪っても、今季はつがえないかもしれない。` : 'この浜で発情を残しているメスは、もうほとんどいない。いま浜を奪っても、今季はつがえないだろう。') : null,
         h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm・体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。相手の大きさは見た目の推定で、多少の見誤りがある。`),
         h('div', { class: 'sub' }, '浜の主は簡単には引かないので、見せ合いで勝つには 2 割ほど大きいホコが要る。それ以外は取っ組み合うかどうかの判断になり、体重と脂肪がものを言う。主に勝てば、その浜とハーレムを奪える。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。'),
         h('div', { class: 'tabs', style: 'margin:6px 0' }, filterBtn, sortBtn),

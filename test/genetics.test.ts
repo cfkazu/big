@@ -493,3 +493,36 @@ describe('子どもたち', () => {
     for (const x of [...help, ...envy]) expect(x.text).not.toMatch(/[{}]|誰か/);
   });
 });
+
+describe('浜の奪い合い', () => {
+  it('主が別の浜を奪うと、もとの浜は空く（同じ主が二つの浜に入らない）', () => {
+    const w = World.create(81, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    for (let i = 0; i < w.slotHolders.length; i++) if (w.slotHolders[i] === p.id) w.slotHolders[i] = null;
+    const other = w.get(w.slotHolders[1]!)!;
+    const old0 = w.get(w.slotHolders[0]!);
+    if (old0) old0.slot = null;
+    w.slotHolders[0] = p.id;
+    p.slot = 0;
+    (w as unknown as { resolveWin(a: unknown, b: unknown, k: string, s: number): void }).resolveWin(p, other, 'display', 1);
+    expect(w.slotHolders.filter((id) => id === p.id)).toHaveLength(1);
+    expect(w.slotOf(p)).toBe(1);
+    expect(w.slotHolders[0]).toBeNull();
+  });
+
+  it('何年回しても、ひとりの主が二つの浜に入らない', () => {
+    const w = World.create(33, 0);
+    const ww = w as unknown as { groomingPhase(): void };
+    const orig = ww.groomingPhase.bind(w);
+    let dup = 0;
+    ww.groomingPhase = () => {
+      const ids = w.slotHolders.filter((x) => x != null);
+      if (new Set(ids).size !== ids.length) dup++;
+      orig();
+    };
+    for (let y = 0; y < 15; y++) w.simulateYearAuto();
+    expect(dup).toBe(0);
+  });
+});
