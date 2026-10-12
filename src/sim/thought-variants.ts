@@ -7,14 +7,14 @@ import type { ThoughtKey } from './thoughts';
  *  hokoFan / gentleFan：メスの好みが、大きなホコ／穏やかなオス
  *  old / young：自分が年寄り／若い
  *  rivalBig / rivalSmall / rivalEven：相手のオスのホコが自分よりはっきり大きい／小さい／ほぼ同じ
- * {cm} は話題のオスのホコの長さ、{other} は相手の名前、{I} は一人称。
+ * {other} は相手の名前、{I} は一人称。長さの数字はセリフに入れない（ハマトドは寸法で話さない）。
  */
 export type Tag = 'huge' | 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young' | 'rivalBig' | 'rivalSmall' | 'rivalEven';
 
 export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>>> = {
   // ─── メスがホコをなめて綺麗にしたとき ───
   fGroomHoko: {
-    big: ['こんなにおっきなホコをなめて綺麗にできて幸せ。', 'なめがいのあるホコ。舌が疲れちゃう。', '{cm}cmもあるのよ。ほかの浜の子に自慢しちゃう。', '大きすぎて、なめ終わるころには日が暮れそう。'],
+    big: ['こんなにおっきなホコをなめて綺麗にできて幸せ。', 'なめがいのあるホコ。舌が疲れちゃう。', 'こんなに立派なのよ。ほかの浜の子に自慢しちゃう。', '大きすぎて、なめ終わるころには日が暮れそう。'],
     small: ['……小さいけど、ツヤだけは一番にしてあげる。', '大きさじゃないのよ、ツヤよ、ツヤ。', 'こぢんまりしてて、すぐなめ終わるわ。'],
     fond: ['ボスのホコ、今日も愛おしい。', 'ボスのためなら、いくらでもなめてあげる。'],
     cold: ['仕事だからなめてるだけ。', 'はいはい、なめればいいんでしょ。'],
@@ -34,7 +34,7 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   // ─── オスがホコをなめて綺麗にしてもらったとき ───
   groomedHoko: {
-    big: ['{I}の{cm}cm、今日はいちだんと輝いている。', 'これだけの逸物、なめがいもあるだろう。'],
+    big: ['{I}の逸物、今日はいちだんと輝いている。', 'これだけの逸物、なめがいもあるだろう。'],
     small: ['ツヤが出れば、少しは大きく見えるはず……', '大きさでは負けても、ツヤでは負けん。'],
     fond: ['{other}になめてもらうのは格別だ。', '{other}になめてもらうと、ホコが誇らしげだ。'],
     cold: ['{other}、なめ方が雑じゃないか……？'],
@@ -42,7 +42,7 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   // ─── 交尾 ───
   fMated: {
-    huge: ['こんなに大きなホコでついてもらえるなんて、幸せ。', '{cm}cm……まだ体が震えてる。', 'あんなに大きいの、はじめて。'],
+    huge: ['こんなに大きなホコでついてもらえるなんて、幸せ。', 'あの大きさ……まだ体が震えてる。', 'あんなに大きいの、はじめて。'],
     big: ['こんなに大きなホコでついてもらえるなんて、幸せ。', '{other}のホコ、噂どおりだったわ。', 'さすが立派なホコ。言うことなしね。'],
     small: ['……まあ、大きさがすべてじゃないし。', 'ホコは小さめだけど、一生懸命だったわ。', '思ってたより小さかった。……内緒ね。'],
     fond: ['{other}の子なら、きっと強い子になる。', '{other}とつがえて、うれしい。'],
@@ -64,16 +64,16 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
     cold: ['近寄らないで。'],
   },
   mated: {
-    huge: ['{I}の{cm}cmに、{other}も声が出なかったようだ。', 'この大きさを受け止めるとは、{other}もたいしたものだ。'],
-    big: ['{other}も{I}のホコに夢中だ。', '{I}の{cm}cmに、{other}も満足そうだ。'],
+    huge: ['{I}のホコに、{other}も声が出なかったようだ。', 'この大きさを受け止めるとは、{other}もたいしたものだ。'],
+    big: ['{other}も{I}のホコに夢中だ。', '{I}のホコに、{other}も満足そうだ。'],
     small: ['小さくても、やることはやる。', '{other}、大きさのことは何も言わなかった。優しい子だ。'],
     fond: ['{other}は{I}を待っていたようだ。'],
     cold: ['{other}、終わるなりそっぽを向いた……'],
     old: ['この歳でも、まだまだやれる。'],
   },
   matedMany: {
-    huge: ['この{cm}cm、浜じゅうのメスが放っておかない。'],
-    big: ['この{cm}cm、休む暇もない。'],
+    huge: ['このホコ、浜じゅうのメスが放っておかない。'],
+    big: ['このホコ、休む暇もない。'],
     small: ['大きさより数だ。'],
   },
   // ─── 主がメスに構ったとき ───
@@ -93,7 +93,7 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   // ─── メスが主を見て ───
   fAdmire: {
-    big: ['{cm}cmのホコ、見た？　うちのボスよ。', '相手が気の毒になるくらいの差だったわ。'],
+    big: ['あのホコ、見た？　うちのボスよ。', '相手が気の毒になるくらいの差だったわ。'],
     small: ['ホコは小さいのに、よく勝ったわね。'],
     hokoFan: ['ボスのホコ、今日も惚れ惚れしちゃう。'],
   },
@@ -123,12 +123,12 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   // ─── オス同士 ───
   winDisplay: {
-    big: ['{cm}cmに勝てるやつなど、この浜にはいない。', '見せただけで終わりだ。'],
+    big: ['このホコに勝てるやつなど、この浜にはいない。', '見せただけで終わりだ。'],
     small: ['{I}より大きいのに、なぜか引いてくれた……？'],
     old: ['まだまだ若いのには負けんわい。'],
   },
   loseDisplay: {
-    big: ['{I}の{cm}cmでも足りないとは……'],
+    big: ['{I}のホコでも足りないとは……'],
     small: ['分かってはいた。分かってはいたんだ。'],
     old: ['昔の{I}なら負けなかったのに。'],
   },
@@ -148,12 +148,12 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
     rivalBig: ['あの大きさとは、まだ組めない。', '{other}とは、もう少し体ができてからだ。'],
   },
   takeHarem: {
-    big: ['この{cm}cmにふさわしい浜を手に入れた。'],
+    big: ['このホコにふさわしい浜を手に入れた。'],
     small: ['ホコが小さくても主になれるんだ！'],
     young: ['若造と呼ばれた日々は終わった。'],
   },
   holderIdle: {
-    big: ['{cm}cm。見るがいい。'],
+    big: ['この浜いちばんのホコだ。見るがいい。'],
     small: ['ハーレムのみんな、{I}のホコをどう思っているんだろう……'],
     old: ['あと何年、この浜を守れるだろう。'],
   },
