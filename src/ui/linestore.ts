@@ -2,7 +2,7 @@ import { setCustomLines, type CustomLine, type ThoughtKey } from '../sim/thought
 import type { Tag } from '../sim/thought-variants';
 
 /**
- * セリフ帳で足されたセリフの置き場。
+ * セリフ帳で足されたセリフ（と、消されたもとのセリフ）の置き場。
  * 公開ページでは artifact の db（"lines" コレクション）に入れ、届いた変更をすぐ setCustomLines に流す。
  * db が使えないとき（手元の開発サーバーなど）はブラウザの localStorage に置く。
  */
@@ -65,7 +65,7 @@ function goLocal(): void {
 
 function toLine(id: string, d: Record<string, unknown> | undefined): (CustomLine & { at: number }) | null {
   if (!d || typeof d.key !== 'string' || typeof d.text !== 'string') return null;
-  return { id, key: d.key as ThoughtKey, tag: (typeof d.tag === 'string' ? d.tag : '') as Tag | '', text: d.text.slice(0, 120), at: typeof d.at === 'number' ? d.at : 0 };
+  return { id, key: d.key as ThoughtKey, tag: (typeof d.tag === 'string' ? d.tag : '') as Tag | '', text: d.text.slice(0, 120), hide: d.hide === true, at: typeof d.at === 'number' ? d.at : 0 };
 }
 
 /** 起動時に一度だけ呼ぶ。db の返事は待たずに戻る。 */
@@ -108,6 +108,19 @@ export async function addLine(key: ThoughtKey, tag: Tag | '', text: string): Pro
   notify();
 }
 
+/** もとからあるセリフを使わないようにする（removeLine で戻せる） */
+export async function hideLine(key: ThoughtKey, text: string): Promise<void> {
+  if (mode === 'db' && db) {
+    await db.collection('lines').add({ key, tag: '', text, hide: true, at: Date.now() });
+    return;
+  }
+  local.push({ id: `h${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`, key, tag: '', text, hide: true });
+  writeLocal();
+  setCustomLines(local);
+  notify();
+}
+
+/** 足したセリフを消す・消したセリフを戻す */
 export async function removeLine(id: string): Promise<void> {
   if (mode === 'db' && db) {
     await db.doc(`lines/${id}`).delete();

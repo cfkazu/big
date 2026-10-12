@@ -479,17 +479,34 @@ export interface CustomLine {
   /** 条件の札。'' はどんなときでも */
   tag: Tag | '';
   text: string;
+  /** true なら、もとからあるセリフ text を使わない（セリフ帳で消したもの） */
+  hide?: boolean;
 }
 
 let custom: CustomLine[] = [];
+let hiddenEntries: CustomLine[] = [];
+let hidden = new Map<ThoughtKey, Set<string>>();
 
-/** 足されたセリフを入れ替える。次にセリフを選ぶときから使われる。 */
+/** 足されたセリフ・消されたセリフを入れ替える。次にセリフを選ぶときから使われる。 */
 export function setCustomLines(lines: CustomLine[]): void {
-  custom = lines.filter((l) => l.key in T && (l.tag === '' || l.tag in TAG_LABEL) && typeof l.text === 'string' && l.text.length > 0);
+  const valid = lines.filter((l) => l.key in T && (l.tag === '' || l.tag in TAG_LABEL) && typeof l.text === 'string' && l.text.length > 0);
+  custom = valid.filter((l) => !l.hide);
+  hiddenEntries = valid.filter((l) => l.hide);
+  hidden = new Map();
+  for (const l of hiddenEntries) hidden.set(l.key, (hidden.get(l.key) ?? new Set()).add(l.text));
 }
 
 export function customLines(): readonly CustomLine[] {
   return custom;
+}
+
+/** セリフ帳で消された、もとからあるセリフ */
+export function hiddenLines(key: ThoughtKey): readonly CustomLine[] {
+  return hiddenEntries.filter((l) => l.key === key);
+}
+
+export function isHidden(key: ThoughtKey, text: string): boolean {
+  return hidden.get(key)?.has(text) ?? false;
 }
 
 /** もともとあるセリフの一覧（セリフ帳で見せる）。kind は どんなとき／強気／弱気／条件の札。 */
@@ -522,22 +539,31 @@ export function makeThought(
   ctx: { year: number; day: number; other?: string; n?: number; tags?: Tag[]; cm?: number; aboutId?: number; avoid?: (raw: string) => boolean },
 ): Thought {
   const e = T[key];
+  // セリフ帳で消されたセリフは使わない
+  const hid = hidden.get(key);
+  const keep = (arr: string[] | undefined) => (arr ?? []).filter((t) => !hid?.has(t));
+  const any = keep(e.any);
+  const brash = keep(e.brash);
+  const timid = keep(e.timid);
   const mine = custom.filter((c) => c.key === key);
   const anyExtra = mine.filter((c) => c.tag === '').map((c) => c.text);
   // 条件の札ごとの束（もともとのセリフ＋足されたセリフ）
-  const tagged = (t: Tag) => [...(VARIANTS[key]?.[t] ?? []), ...mine.filter((c) => c.tag === t).map((c) => c.text)];
+  const tagged = (t: Tag) => [...keep(VARIANTS[key]?.[t]), ...mine.filter((c) => c.tag === t).map((c) => c.text)];
   const matched = (ctx.tags ?? []).filter((t) => tagged(t).length > 0);
   const brashness = (ind.base.aggression + ind.base.boldness) / 2;
   let pool: string[];
   // 状況に合うセリフがあれば、そちらを優先する
   if (matched.length > 0 && rng.chance(0.75)) pool = tagged(rng.pick(matched));
-  else if (e.brash && brashness > 0.6 && rng.chance(0.7)) pool = [...e.brash, ...anyExtra];
-  else if (e.timid && brashness < 0.4 && rng.chance(0.7)) pool = [...e.timid, ...anyExtra];
-  else pool = [...e.any, ...anyExtra];
+  else if (brash.length > 0 && brashness > 0.6 && rng.chance(0.7)) pool = [...brash, ...anyExtra];
+  else if (timid.length > 0 && brashness < 0.4 && rng.chance(0.7)) pool = [...timid, ...anyExtra];
+  else pool = [...any, ...anyExtra];
+  // 全部消されていたら、強気・弱気の束から。それも空なら、もとのセリフに戻す
+  if (pool.length === 0) pool = [...brash, ...timid];
+  if (pool.length === 0) pool = e.any;
   // 最近言った・ほかの個体が言ったばかりの文は避ける。選んだ束で尽きたら、ふつうのセリフから選ぶ。
   if (ctx.avoid) {
     const fresh = pool.filter((t) => !ctx.avoid!(t));
-    const base = [...e.any, ...(e.brash ?? []), ...(e.timid ?? []), ...anyExtra].filter((t) => !ctx.avoid!(t));
+    const base = [...any, ...brash, ...timid, ...anyExtra].filter((t) => !ctx.avoid!(t));
     if (fresh.length > 0) pool = fresh;
     else if (base.length > 0) pool = base;
   }

@@ -1,8 +1,8 @@
-import { builtinLines, customLines, SITUATIONS, TAG_LABEL, type Situation, type SituationGroup, type ThoughtKey } from '../sim/thoughts';
+import { builtinLines, customLines, hiddenLines, isHidden, SITUATIONS, TAG_LABEL, type Situation, type SituationGroup, type ThoughtKey } from '../sim/thoughts';
 import type { Tag } from '../sim/thought-variants';
 import { btn, clear, h } from './dom';
 import { ask } from './modal';
-import { addLine, onLinesChanged, removeLine, storeMode } from './linestore';
+import { addLine, hideLine, onLinesChanged, removeLine, storeMode } from './linestore';
 
 /**
  * セリフ帳：場面ごとのセリフを眺めて、自分で足す。
@@ -12,6 +12,7 @@ import { addLine, onLinesChanged, removeLine, storeMode } from './linestore';
 const MAX_LEN = 80;
 const GROUPS: SituationGroup[] = ['オス', 'メス', '子ども・冬'];
 const KIND_LABEL: Record<'any' | 'brash' | 'timid', string> = { any: 'どんなときでも', brash: '強気な個体', timid: '弱気な個体' };
+const HIDDEN_LABEL = '消したセリフ（使われない）';
 
 /** 差し込みの札：保存する形と、画面で見せる形 */
 function tokens(sit: Situation): { raw: string; shown: string; hint: string }[] {
@@ -38,17 +39,38 @@ function lineNodes(text: string, sit: Situation): (Node | string)[] {
   return text.split(/(\{I\}|\{other\}|\{n\})/).map((part) => (map.has(part) ? h('span', { class: 'tok' }, map.get(part)!) : part));
 }
 
-function counts(key: ThoughtKey): { base: number; mine: number } {
-  return { base: builtinLines(key).length, mine: customLines().filter((c) => c.key === key).length };
+function counts(key: ThoughtKey): { base: number; mine: number; hidden: number } {
+  const all = builtinLines(key);
+  const base = all.filter((b) => !isHidden(key, b.text)).length;
+  return { base, mine: customLines().filter((c) => c.key === key).length, hidden: all.length - base };
+}
+
+/** 二度押しで実行するボタン（消す・戻す） */
+function confirmBtn(label: string, sure: string, run: () => Promise<void>, disabled = false): HTMLButtonElement {
+  let armed = false;
+  const b = btn(label, () => {
+    if (!armed) {
+      armed = true;
+      b.textContent = sure;
+      return;
+    }
+    b.disabled = true;
+    run().catch(() => {
+      b.disabled = false;
+      b.textContent = 'できなかった';
+    });
+  }, 'small lb-del');
+  b.disabled = disabled || storeMode() === 'pending';
+  return b;
 }
 
 function storeNote(): HTMLElement {
   const m = storeMode();
   const text =
     m === 'db'
-      ? 'ここで足したセリフは保存され、このゲームを開く人みんなの浜で使われる。足したその日から喋りだす。'
+      ? '足したり消したりしたセリフは保存され、このゲームを開く人みんなの浜に効く。その日から変わる。'
       : m === 'local'
-        ? 'このブラウザにだけ保存される。足したその日から喋りだす。'
+        ? '足したり消したりしたセリフは、このブラウザにだけ保存される。その日から変わる。'
         : '保存先につないでいます…';
   return h('div', { class: 'sub lb-note' }, text);
 }
@@ -74,7 +96,7 @@ export function openLineBook(): Promise<void> {
         toTop();
         root.append(
           h('h2', null, 'セリフ帳'),
-          h('div', null, '場面を選ぶと、いまあるセリフが見られて、自分のセリフを足せる。条件をつければ「大きいホコのとき」のような決まった場面で優先して喋る。'),
+          h('div', null, '場面を選ぶと、いまあるセリフが見られて、自分のセリフを足したり、気に入らないセリフを消したりできる。条件をつければ「大きいホコのとき」のような決まった場面で優先して喋る。消したセリフはいつでも戻せる。'),
           storeNote(),
         );
         for (const g of GROUPS) {
@@ -84,7 +106,7 @@ export function openLineBook(): Promise<void> {
             if (sit.group !== g) continue;
             const c = counts(key);
             grid.append(
-              btn(h('span', { class: 'lb-sit-in' }, h('span', null, sit.label), h('span', { class: 'lb-count' }, c.mine > 0 ? `${c.base}＋${c.mine}` : `${c.base}`)), () => showSituation(key), 'small lb-sit'),
+              btn(h('span', { class: 'lb-sit-in' }, h('span', null, sit.label), h('span', { class: 'lb-count' }, `${c.base}${c.mine > 0 ? `＋${c.mine}` : ''}${c.hidden > 0 ? `（−${c.hidden}）` : ''}`)), () => showSituation(key), 'small lb-sit'),
             );
           }
           root.append(grid);
@@ -175,28 +197,28 @@ export function openLineBook(): Promise<void> {
           clear(list);
           const groups = new Map<string, HTMLElement[]>();
           const push = (label: string, el: HTMLElement) => groups.set(label, [...(groups.get(label) ?? []), el]);
+          const c = counts(key);
+          // 場面のセリフが一つもなくならないように、最後の一つは消せない
+          const last = c.base + c.mine <= 1;
+          const shown = new Set<string>();
           for (const b of builtinLines(key)) {
+            if (isHidden(key, b.text) || shown.has(b.text)) continue;
+            shown.add(b.text);
             const label = b.kind in KIND_LABEL ? KIND_LABEL[b.kind as keyof typeof KIND_LABEL] : TAG_LABEL[b.kind as Tag];
-            push(label, h('li', null, ...lineNodes(b.text, sit)));
+            push(label, h('li', null, ...lineNodes(b.text, sit), confirmBtn('消す', '本当に消す', () => hideLine(key, b.text), last)));
           }
-          for (const c of customLines().filter((c) => c.key === key)) {
-            let armed = false;
-            const del = btn('消す', () => {
-              if (!armed) {
-                armed = true;
-                del.textContent = '本当に消す';
-                return;
-              }
-              del.disabled = true;
-              removeLine(c.id).catch(() => {
-                del.disabled = false;
-                del.textContent = '消せなかった';
-              });
-            }, 'small lb-del');
-            push(c.tag ? TAG_LABEL[c.tag] : KIND_LABEL.any, h('li', { class: 'mine' }, h('span', { class: 'tag gold' }, 'あなた'), ...lineNodes(c.text, sit), del));
+          for (const m of customLines().filter((x) => x.key === key)) {
+            push(m.tag ? TAG_LABEL[m.tag] : KIND_LABEL.any, h('li', { class: 'mine' }, h('span', { class: 'tag gold' }, 'あなた'), ...lineNodes(m.text, sit), confirmBtn('消す', '本当に消す', () => removeLine(m.id), last)));
+          }
+          const gone = hiddenLines(key);
+          if (gone.length > 0) {
+            groups.set(
+              HIDDEN_LABEL,
+              gone.map((g) => h('li', { class: 'gone' }, ...lineNodes(g.text, sit), confirmBtn('戻す', '本当に戻す', () => removeLine(g.id)))),
+            );
           }
           // どんなとき → 強気 → 弱気 → 条件の順
-          const order = [KIND_LABEL.any, KIND_LABEL.brash, KIND_LABEL.timid, ...sit.tags.map((t) => TAG_LABEL[t])];
+          const order = [KIND_LABEL.any, KIND_LABEL.brash, KIND_LABEL.timid, ...sit.tags.map((t) => TAG_LABEL[t]), HIDDEN_LABEL];
           const labels = [...groups.keys()].sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99);
           for (const label of labels) list.append(h('h3', null, label), h('ul', null, ...groups.get(label)!));
           update();

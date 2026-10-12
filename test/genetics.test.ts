@@ -18,7 +18,7 @@ import {
 import { Rng } from '../src/sim/rng';
 import { World } from '../src/sim/world';
 import { bloodEstimate } from '../src/sim/lineage';
-import { builtinLines, customLines, makeThought, setCustomLines, SITUATIONS } from '../src/sim/thoughts';
+import { builtinLines, customLines, isHidden, makeThought, setCustomLines, SITUATIONS } from '../src/sim/thoughts';
 
 function setAllele(g: Genome, locusId: string, which: 0 | 1, value: number) {
   const { chrom, idx } = LOCUS_INDEX[locusId];
@@ -457,6 +457,19 @@ describe('セリフ帳', () => {
     // おかしなものは入らない
     setCustomLines([{ id: 'z', key: 'nope' as never, tag: '', text: 'x' }, { id: 'w', key: 'fIdle', tag: 'bogus' as never, text: 'y' }]);
     expect(customLines()).toHaveLength(0);
+  });
+
+  it('消したもとのセリフは使われず、全部消しても喋れなくはならない', () => {
+    const w = World.create(5, 20);
+    const f = w.living().find((i) => i.sex === 'F')!;
+    const rng = new Rng(4);
+    const all = builtinLines('fIdle').map((b) => b.text);
+    setCustomLines([{ id: 'h1', key: 'fIdle', tag: '', text: all[0], hide: true }]);
+    expect(isHidden('fIdle', all[0])).toBe(true);
+    for (let i = 0; i < 300; i++) expect(makeThought(f, 'fIdle', rng, { year: w.year, day: 1, other: 'ゴンタ' }).raw).not.toBe(all[0]);
+    setCustomLines(all.map((t, i) => ({ id: `h${i}`, key: 'fIdle' as const, tag: '' as const, text: t, hide: true })));
+    expect(makeThought(f, 'fIdle', rng, { year: w.year, day: 1, other: 'ゴンタ' }).text.length).toBeGreaterThan(0);
+    setCustomLines([]);
   });
 
   it('どの場面にも5つ以上のセリフがある', () => {

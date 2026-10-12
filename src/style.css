@@ -927,6 +927,8 @@ canvas.chart {
 .lb-list ul { margin: 0; padding-left: 18px; }
 .lb-list li { margin: 2px 0; }
 .lb-list li.mine { color: var(--white); }
+.lb-list li.gone { color: var(--gray2); text-decoration: line-through; }
+.lb-list li.gone .btn { text-decoration: none; }
 .lb-del { margin-left: 6px; vertical-align: middle; }
 
 @media (max-width: 900px) {
