@@ -491,12 +491,17 @@ describe('子どもたち', () => {
     ww.think = (ind, key, ctx, prob) => {
       const before = ind.thought;
       orig(ind, key, ctx, prob);
-      if (ind.thought !== before && (key === 'pupHelpGroom' || key === 'youngEnvy' || key === 'pupWaitMom')) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
+      if (ind.thought !== before && ['pupHelpGroom', 'youngEnvy', 'pupWaitMom', 'pupWaitMate', 'pupCheer'].includes(key)) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
     };
     for (let y = 0; y < 3; y++) w.simulateYearAuto();
     const help = said.get('pupHelpGroom') ?? [];
     const envy = said.get('youngEnvy') ?? [];
     const wait = said.get('pupWaitMom') ?? [];
+    const waitMate = said.get('pupWaitMate') ?? [];
+    const cheer = said.get('pupCheer') ?? [];
+    expect(waitMate.length).toBeGreaterThan(0);
+    expect(cheer.length).toBeGreaterThan(0);
+    expect([...waitMate, ...cheer].every((x) => x.age === 0 && !/ホコ|なめ|つが/.test(x.text))).toBe(true);
     expect(wait.length).toBeGreaterThan(0);
     expect(wait.every((x) => x.age === 0 && !/ホコ|なめ/.test(x.text))).toBe(true);
     // オスの子とメスの子で言うことが違う
@@ -562,10 +567,33 @@ describe('セリフのくり返し', () => {
         total += lines.length;
         distinct += c.size;
         worst = Math.max(worst, ...c.values());
-        expect(lines.some((t) => t.includes('誰か'))).toBe(false);
+        // 名前の差し込みが空のときに入る「誰か」が出ていない
+        expect(lines.some((t) => /誰か[がのにとはをったよ、。]/.test(t))).toBe(false);
       }
     }
     expect(worst).toBeLessThanOrEqual(7);
     expect(distinct / total).toBeGreaterThan(0.65);
+  });
+});
+
+describe('ホコを気づかうメス', () => {
+  it('海水をかける・カニやカモメを追い払うことがあり、きのうのできごとにも出る', () => {
+    const w = World.create(14, 0);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    const keys = new Set<string>();
+    const ww = w as unknown as { think: (ind: { thought: unknown }, key: string, ctx: unknown, prob?: number) => void };
+    const orig = ww.think.bind(w);
+    ww.think = (ind, key, ctx, prob) => {
+      const before = ind.thought;
+      orig(ind, key, ctx, prob);
+      if (ind.thought !== before) keys.add(key);
+    };
+    for (let y = 0; y < 2; y++) w.simulateYearAuto();
+    for (const k of ['fSplashHoko', 'fShooCrab', 'fShooGull', 'splashedHoko', 'crabShooed', 'gullShooed']) expect(keys.has(k), k).toBe(true);
+    // 主のできごとの言い方
+    w.startBreedingSeason();
+    const p = w.player!;
+    w.dayEvents = [{ kind: 'hokoCare', maleId: p.id, femaleId: w.living().find((i) => i.sex === 'F')!.id, what: 'crab' }];
+    expect(w.playerDigest().join('')).toContain('カニを追い払ってくれた');
   });
 });

@@ -451,6 +451,20 @@ export class Scene {
         this.burst(m.x, m.y - 6, e.type === 'wound' ? 'plus' : 'sparkle', e.type === 'hoko' ? 3 : 2);
         break;
       }
+      case 'hokoCare': {
+        const f = this.actors.get(e.femaleId);
+        const m = this.actors.get(e.maleId);
+        if (!f || !m) return;
+        f.tx = m.x + (f.x < m.x ? -12 : 12);
+        f.ty = m.y + 2;
+        f.scriptUntil = this.now + 1000;
+        if (e.what === 'splash') this.burst(m.x, m.y - 6, 'splash', 6);
+        else {
+          f.bubble = { icon: 'anger', until: this.now + 1200 };
+          this.burst(m.x + (f.x < m.x ? 10 : -10), m.y, 'dust', 3);
+        }
+        break;
+      }
       case 'tend': {
         const m = this.actors.get(e.maleId);
         const f = this.actors.get(e.femaleId);

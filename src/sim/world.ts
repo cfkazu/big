@@ -46,6 +46,14 @@ const ONE_DAY_HOLDER_STANCES = new Set(['court', 'groom', 'tend', 'escort', 'soo
 export type GroomType = 'hoko' | 'wound' | 'fur';
 
 /** 世話の言い回し。後ろに「させる」「してもらった」を付けて使う。ホコはなめて綺麗にする。 */
+export type HokoCare = 'splash' | 'crab' | 'gull';
+/** メスがホコのためにしてくれる、ちょっとしたこと（効き目はない） */
+export const HOKO_CARE: Record<HokoCare, string> = {
+  splash: 'がホコに海水をかけて湿らせてくれた',
+  crab: 'がホコを狙うカニを追い払ってくれた',
+  gull: 'がホコをつつきに来たカモメを追い払ってくれた',
+};
+
 export const GROOM_ACT: Record<GroomType, string> = { hoko: 'ホコをなめて綺麗に', wound: '傷の手当てを', fur: '毛づくろいを' };
 
 export type ForageStrategy = 'cautious' | 'normal' | 'greedy';
@@ -80,6 +88,7 @@ export type WorldEvent =
   | { kind: 'mate'; maleId: number; femaleId: number; how: 'holder' | 'satellite' | 'sneaker' | 'peripheral' }
   | { kind: 'groom'; femaleId: number; maleId: number; type: 'hoko' | 'wound' | 'fur' }
   | { kind: 'tend'; maleId: number; femaleId: number }
+  | { kind: 'hokoCare'; maleId: number; femaleId: number; what: HokoCare }
   | { kind: 'soothe'; maleId: number; slot: number }
   | { kind: 'birth'; motherId: number; pupId: number }
   | { kind: 'crushed'; pupId: number; motherId: number }
@@ -417,6 +426,9 @@ export class World {
           break;
         case 'tend':
           if (e.maleId === pid) add('に構った', name(e.femaleId));
+          break;
+        case 'hokoCare':
+          if (e.maleId === pid) add(HOKO_CARE[e.what], name(e.femaleId));
           break;
         case 'soothe':
           if (e.maleId === pid) lines.push('ハーレムをなだめた');
@@ -1413,6 +1425,28 @@ export class World {
       }
     }
     this.groupLickThoughts();
+    this.hokoCareFlavor();
+  }
+
+  /** メスがホコに海水をかけたり、カニやカモメを追い払ったりする（フレーバー） */
+  private hokoCareFlavor(): void {
+    for (let s = 0; s < this.slotHolders.length; s++) {
+      const h = this.get(this.slotHolders[s]);
+      const fs = this.slotFemales(s);
+      if (!h || fs.length === 0) continue;
+      const r = this.rng.next();
+      const what: HokoCare | null = r < 0.08 ? 'splash' : r < 0.13 ? 'crab' : r < 0.16 ? 'gull' : null;
+      if (!what) continue;
+      // 懐いているメスほど気にかける
+      const warm = fs.filter((f) => f.loyalty > 0.3);
+      const f = this.rng.pick(warm.length > 0 ? warm : fs);
+      this.dayEvents.push({ kind: 'hokoCare', maleId: h.id, femaleId: f.id, what });
+      const fk: ThoughtKey = what === 'splash' ? 'fSplashHoko' : what === 'crab' ? 'fShooCrab' : 'fShooGull';
+      const mk: ThoughtKey = what === 'splash' ? 'splashedHoko' : what === 'crab' ? 'crabShooed' : 'gullShooed';
+      this.think(f, fk, { about: h }, 0.5);
+      this.think(h, mk, { about: f }, h.id === this.playerId ? 0.6 : 0.15);
+      if (h.id === this.playerId) this.pushLog(`${f.name}${HOKO_CARE[what]}。`, 'player', f.id);
+    }
   }
 
   /** 同じ日に何頭かがホコをなめたら、ときどきそれ専用のセリフにする */
@@ -1631,6 +1665,28 @@ export class World {
       busy.add(pup.id);
       this.think(pup, 'pupHelpGroom', { about: h });
       if (h.id === this.playerId) this.pushLog(`${pup.name}も母の${mother.name}のまねをして、${GROOM_ACT[e.type]}手伝った。`, 'player', pup.id);
+    }
+    // 母がつがっているあいだ、子は離れたところで待つ
+    for (const e of this.dayEvents) {
+      if (e.kind !== 'mate') continue;
+      const mother = this.get(e.femaleId);
+      const pup = mother?.pupId != null ? this.get(mother.pupId) : undefined;
+      if (!pup || !pup.alive || busy.has(pup.id) || !this.rng.chance(0.25)) continue;
+      busy.add(pup.id);
+      this.think(pup, 'pupWaitMate', {});
+    }
+    // 浜の主（たいていは父）が勝つのを見た子は、憧れる
+    for (const e of this.dayEvents) {
+      if ((e.kind !== 'display' && e.kind !== 'fight') || e.slot === null || this.slotHolders[e.slot] !== e.winnerId) continue;
+      const hero = this.get(e.winnerId);
+      if (!hero) continue;
+      for (const f of this.slotFemales(e.slot)) {
+        const pup = f.pupId != null ? this.get(f.pupId) : undefined;
+        if (!pup || !pup.alive || busy.has(pup.id) || !this.rng.chance(0.2)) continue;
+        busy.add(pup.id);
+        const dad = pup.fatherId === hero.id;
+        this.think(pup, 'pupCheer', { about: hero, other: dad ? 'お父さん' : hero.name });
+      }
     }
     // 交尾したか世話をされた主
     const envied = new Set<number>();
@@ -2007,9 +2063,9 @@ export interface HeadRecord {
 
 /** 自分の欄に出すメスのセリフの優先順（あなたとの関わりが深いものから） */
 const FEMALE_LINE_PRIORITY = [
-  'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
+  'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fShooCrab', 'fShooGull', 'fSplashHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
   'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'pupHelpGroom', 'fAdmire', 'fSoothed', 'newHolderFemale',
-  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'youngEnvy', 'pupWaitMom', 'fIdle',
+  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'pupCheer', 'youngEnvy', 'pupWaitMom', 'pupWaitMate', 'fIdle',
 ];
 
 /** 血統占有率の節目 */

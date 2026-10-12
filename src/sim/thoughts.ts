@@ -10,8 +10,9 @@ export type ThoughtKey =
   | 'sneakSuccess' | 'sneakCaught' | 'satelliteSuccess'
   | 'rivalBigger' | 'youngWatch' | 'peripheralIdle' | 'holderIdle'
   | 'fMoveCrowded' | 'fMoveAttracted' | 'fGroomHoko' | 'fGroomHokoGroup' | 'fGroomWound' | 'fGroomFur'
+  | 'fSplashHoko' | 'fShooCrab' | 'fShooGull' | 'splashedHoko' | 'crabShooed' | 'gullShooed'
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
-  | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'youngEnvy'
+  | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'pupWaitMate' | 'pupCheer' | 'youngEnvy'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
   | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
   | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup' | 'withdrew';
@@ -180,6 +181,30 @@ const T: Record<ThoughtKey, Entry> = {
     mood: 'happy',
     any: ['みんなでボスのホコをなめた。ちょっとしたお祭りね。', 'ぺろぺろ、ぺろぺろ……{n}頭がかりよ。', 'ほかの子と頭がぶつかっちゃった。', '手分けしたら、あっという間にピカピカ。', '先っぽはわたしの担当。ゆずらないわよ。', 'ボス、うっとりしてたわね。'],
   },
+  fSplashHoko: {
+    mood: 'neutral',
+    any: ['乾いちゃだめ。はい、ばしゃっ。', '今日は日差しが強いから、ホコに海水をかけてあげた。', 'ばしゃばしゃ……ほら、しっとりした。', '{other}ったら、ホコが乾いてるのに気づかないんだから。', '冷たかった？　がまんして。', '潮水で湿らせておくと、ツヤが長持ちするのよ。'],
+  },
+  fShooCrab: {
+    mood: 'angry',
+    any: ['シッシッ！　ボスのホコはエサじゃないの！', 'カニがボスのホコをはさもうとしてた。危ないところだったわ。', 'このカニ、しつこい！　あっち行きなさい！', '{other}ったら、カニに狙われてるのに寝てるんだから。', 'カニを追い払ってあげた。お礼はいいのよ。'],
+  },
+  fShooGull: {
+    mood: 'angry',
+    any: ['カモメ！　ボスのホコをつつかないで！', 'バサバサ……もう、しつこい鳥。', 'カモメって光るものが好きなのよね。ボスのホコ、ツヤツヤだから。', '追い払ってあげたわ。{other}はのんきなんだから。', '空から狙うなんて卑怯よ。'],
+  },
+  splashedHoko: {
+    mood: 'happy',
+    any: ['ひゃっ、冷たい！　……でも気持ちいい。', '{other}が海水をかけてくれた。ホコがしゃきっとした。', 'ばしゃっ。……目が覚めた。', 'ホコが乾いていたのか。気づかなかった。', '{other}は気がきく。'],
+  },
+  crabShooed: {
+    mood: 'happy',
+    any: ['カニがホコを狙っていたらしい。{other}、助かった。', 'チョキチョキ……ひっ！　……{other}が追い払ってくれた。', '寝ている間にカニが来ていたとは。', 'カニめ、二度と近づくな。', '{other}がいなかったら、と思うとぞっとする。'],
+  },
+  gullShooed: {
+    mood: 'happy',
+    any: ['カモメがホコを狙ってきた。{other}が追い払ってくれた。', 'ツヤが出すぎるのも考えものだ。カモメに狙われる。', '空からとは……油断も隙もない。', '{other}、頼りになる。', 'バサバサッ！　……な、何だ？'],
+  },
   fGroomWound: {
     mood: 'neutral',
     any: ['ペロッ。……しみる？　がまんして。', 'ボスったらまた傷だらけ。', '無茶ばかりするんだから。', 'この傷、深いわね。じっとしてて。', '喧嘩はほどほどにね、ボス。', 'なめておけば治るわよ。'],
@@ -299,6 +324,16 @@ const T: Record<ThoughtKey, Entry> = {
     mood: 'neutral',
     any: ['お母さん、{other}のお世話で忙しそう。', 'お母さんまだかなあ。', 'お母さん、お仕事中。じゃましちゃだめなんだって。', 'ひまだなあ。砂でもほろう。', 'お母さん、終わったらあそんでくれるかな。', 'おなかすいた……お母さん、まだ？', '{other}のお世話、ながいなあ。'],
   },
+  // 母がつがうあいだ、子は離れたところで待っている（子のセリフはつがいに触れない）
+  pupWaitMate: {
+    mood: 'neutral',
+    any: ['お母さん、どこ行ったのかな。', 'おいてけぼり……。', 'となりのおばさんと待ってる。', 'お母さん、すぐ戻るって。', 'ひとりで待てるもん。', '砂にお絵かきして待ってよう。'],
+  },
+  // 父や母の浜の主が、見せ合いや取っ組み合いで勝つのを見た子
+  pupCheer: {
+    mood: 'happy',
+    any: ['{other}、つよい！', 'すごーい！　{other}が勝った！', '{other}がいれば、こわくない。', 'いまの見た？　{other}、かっこいい！', '{other}の浜は、いちばん安全なんだって。'],
+  },
   youngEnvy: {
     mood: 'neutral',
     any: ['{other}はいいなあ。みんなにお世話してもらって。', '{I}も大きくなったら、{other}みたいにハーレムを持つんだ。', '{other}、モテモテだ……。', 'いつか{I}も、あの浜の主に。', '{other}みたいになるには、いっぱい食べなきゃ。', 'ずるいなあ、{other}ばっかり。', '{I}だって、いつか……！'],
@@ -359,6 +394,9 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   matedMany: sit('たくさんつがったオス', 'オス', null, [...SIZE, ...AGE], MATED_N),
   groomedHoko: sit('ホコをなめてもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   groomedHokoGroup: sit('何頭かにホコをなめてもらったオス', 'オス', 'メスたち', [...SIZE, ...AGE], LICKERS_N),
+  splashedHoko: sit('ホコに海水をかけてもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
+  crabShooed: sit('カニを追い払ってもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
+  gullShooed: sit('カモメを追い払ってもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   groomedWound: sit('傷の手当てをしてもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   groomedFur: sit('毛づくろいしてもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   orderRefused: sit('世話を断られた主', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
@@ -379,6 +417,9 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   seasonZero: sit('繁殖期の終わり（つがえなかった）', 'オス', null, [...SIZE, ...AGE]),
   fGroomHoko: sit('ホコをなめて綺麗にしたメス', 'メス', 'ボス', F_ABOUT_M),
   fGroomHokoGroup: sit('ほかのメスと一緒にホコをなめたメス', 'メス', 'ボス', F_ABOUT_M, LICKERS_N),
+  fSplashHoko: sit('ホコに海水をかけてあげたメス', 'メス', 'ボス', F_ABOUT_M),
+  fShooCrab: sit('ホコを狙うカニを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),
+  fShooGull: sit('ホコを狙うカモメを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),
   fGroomWound: sit('傷の手当てをしたメス', 'メス', 'ボス', F_ABOUT_M),
   fGroomFur: sit('毛づくろいをしたメス', 'メス', 'ボス', F_ABOUT_M),
   fOrderedOk: sit('頼まれた世話を引き受けたメス', 'メス', 'ボス', F_ABOUT_M),
@@ -403,6 +444,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   pupMilk: sit('乳を飲む子ども', '子ども・冬', null, SEX),
   pupHelpGroom: sit('母のまねで世話を手伝う子（メス）', '子ども・冬', 'ボス', []),
   pupWaitMom: sit('母がボスの世話をしているあいだ待つ子', '子ども・冬', 'ボス', SEX),
+  pupWaitMate: sit('母がつがうあいだ、離れて待つ子', '子ども・冬', null, SEX),
+  pupCheer: sit('勝った父（浜の主）に憧れる子', '子ども・冬', '父・主', SEX),
   youngEnvy: sit('主をうらやむ子・若いオス', '子ども・冬', '主', []),
   orcaEscape: sit('シャチから逃げた', '子ども・冬', null, [...SIZE, ...AGE]),
   fat: sit('冬によく太った', '子ども・冬', null, [...SIZE, ...AGE]),
