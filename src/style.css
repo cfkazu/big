@@ -60,10 +60,11 @@ button {
   height: 100%;
   display: grid;
   grid-template-columns: auto 352px;
-  grid-template-rows: 48px auto 1fr;
+  grid-template-rows: 48px auto auto 1fr;
   grid-template-areas:
     'top top'
     'view side'
+    'time side'
     'log side';
   gap: 12px;
   padding: 12px;
@@ -222,6 +223,51 @@ button {
   image-rendering: pixelated;
   display: block;
   cursor: pointer;
+}
+
+#timebar {
+  grid-area: time;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#timebar:empty {
+  display: none;
+}
+
+#timebar .speeds {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+#timebar .speeds .sub {
+  margin-right: 4px;
+}
+
+#pause-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  line-height: 1.3;
+  padding: 2px 8px;
+  background: var(--ink);
+  color: var(--gold1);
+  box-shadow: 0 0 0 2px var(--gold0);
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
+  z-index: 2;
+  animation: blink 1.4s steps(2, start) infinite;
+}
+
+#pause-hint.show {
+  display: block;
 }
 
 #tooltip {
@@ -651,7 +697,7 @@ table.mini td.r {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .blink { animation: none; }
+  .blink, #pause-hint { animation: none; }
 }
 
 canvas.chart {
@@ -687,15 +733,28 @@ canvas.chart {
 }
 
 @media (max-width: 900px) {
-  html, body { overflow: auto; }
+  html, body { overflow-x: hidden; overflow-y: auto; height: auto; }
   #app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto 240px;
-    grid-template-areas: 'top' 'view' 'side' 'log';
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto 260px;
+    grid-template-areas: 'top' 'view' 'time' 'side' 'log';
     height: auto;
     padding: 8px 16px;
+    gap: 10px;
   }
-  #top { flex-wrap: wrap; height: auto; }
+  #app > * { min-width: 0; }
+  #top { flex-wrap: wrap; height: auto; gap: 6px 10px; }
+  #top .title { font-size: 24px; }
+  #top .spacer { display: none; }
+  #top .controls { width: 100%; }
+  #top .controls .btn { flex: 1; }
+  #timebar > .btn { flex: 1; }
+  #timebar .speeds { margin-left: 0; width: 100%; justify-content: flex-end; }
+  #pause-hint { font-size: 12px; white-space: normal; width: 90%; text-align: center; }
+  .stat { grid-template-columns: 72px minmax(0, 1fr) auto; }
+  .stat .v { min-width: 0; }
+  .versus { gap: 6px; }
+  .ruler { height: 100px; }
   .title-card { padding: 4px 12px; }
   .title-card .logo { font-size: 32px; letter-spacing: 2px; text-shadow: 2px 2px 0 var(--rust), 4px 4px 0 var(--ink); }
   .title-card .tagline { margin: 2px 0 8px; }

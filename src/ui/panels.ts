@@ -84,7 +84,7 @@ function playerCard(g: GameView): HTMLElement {
     stat('貯精', bar(spermCap ? sperm / spermCap : 0, 'sperm'), `${Math.round(sperm)}億`),
     stat('序列', h('span', { class: 'sub' }, rank ? `主型 ${rank.of} 頭中` : '―'), rank ? `${rank.rank}位` : '―'),
     stat('ハーレム', bar(cap ? Math.min(1, harem / cap) : 0, 'love'), slot !== null ? `${harem}頭/見張${cap}` : 'なし'),
-    stat('今季の交尾', h('span'), `${p.season.matings}回`),
+    stat('今季交尾', h('span'), `${p.season.matings}回`),
     stat('子', h('span'), `${p.childIds.length}頭`),
   );
   const thought = p.thought ? h('div', { class: 'thought' }, `「${p.thought.text}」`) : null;

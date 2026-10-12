@@ -65,6 +65,7 @@ class Game implements GameView {
     this.last = t;
     this.scene.update(dt);
     this.scene.draw();
+    $('pause-hint').classList.toggle('show', this.mode === 'season' && !this.playing && !this.stepping && !isModalOpen());
     const auto = this.mode === 'title' || (this.mode === 'season' && this.playing);
     if (auto && !this.stepping && !isModalOpen()) {
       this.dayClock += dt;
@@ -312,10 +313,10 @@ class Game implements GameView {
     const narrow = window.innerWidth <= 900;
     let scale: number;
     if (narrow) {
-      scale = Math.max(1, (window.innerWidth - 32) / VIEW_W);
+      scale = Math.max(1, (document.documentElement.clientWidth - 32) / VIEW_W);
     } else {
       const availW = window.innerWidth - 352 - 12 * 3 - 12;
-      const availH = window.innerHeight - 48 - 12 * 4 - 150;
+      const availH = window.innerHeight - 48 - 56 - 12 * 5 - 150;
       scale = Math.max(1, Math.floor(Math.min(availW / VIEW_W, availH / VIEW_H)));
     }
     this.canvas.style.width = `${Math.floor(VIEW_W * scale)}px`;
@@ -385,21 +386,30 @@ class Game implements GameView {
       h('div', { class: 'season-bar' }, h('i', { style: `width:${(prog * 100).toFixed(1)}%` })),
       h('div', { class: 'spacer' }),
     );
-    const controls = h('div', { class: 'controls' });
     const can = this.mode === 'season';
-    controls.append(
-      btn(this.playing ? '❚❚ 止める' : '▶ 進める', () => this.togglePlay(), `small ${this.playing ? 'on' : 'primary'}`),
-      btn('1日', () => void this.stepDay(), 'small'),
-    );
-    for (const s of [1, 2, 4]) {
-      controls.append(btn(`×${s}`, () => { this.speed = s; this.renderTop(); }, `small ${this.speed === s ? 'on' : ''}`));
-    }
-    controls.append(
+    const controls = h(
+      'div',
+      { class: 'controls' },
       btn(this.autoJudge ? '判断：気質任せ' : '判断：自分で', () => { this.autoJudge = !this.autoJudge; this.renderTop(); }, `small ${this.autoJudge ? 'on' : ''}`),
-      btn('？', () => void this.showHelp(), 'small'),
+      btn('遊び方', () => void this.showHelp(), 'small'),
     );
-    for (const b of controls.querySelectorAll('button')) (b as HTMLButtonElement).disabled = !can;
     top.append(controls);
+    this.renderTime(can);
+  }
+
+  /** 浜のすぐ下の時間操作 */
+  private renderTime(can: boolean): void {
+    const bar = $('timebar');
+    clear(bar);
+    if (this.mode === 'title' || this.mode === 'loading') return;
+    const play = btn(this.playing ? '❚❚ 止める' : '▶ 自動で進める', () => this.togglePlay(), this.playing ? 'on' : 'primary');
+    const next = btn('次の日へ ▸', () => void this.stepDay(), '');
+    const speeds = h('div', { class: 'speeds' }, h('span', { class: 'sub' }, '速さ'));
+    for (const s of [1, 2, 4]) {
+      speeds.append(btn(`×${s}`, () => { this.speed = s; this.renderTop(); }, `small ${this.speed === s ? 'on' : ''}`));
+    }
+    for (const b of [play, next, ...speeds.querySelectorAll('button')]) (b as HTMLButtonElement).disabled = !can;
+    bar.append(play, next, speeds);
   }
 
   // ───────────────────────── 画面 ─────────────────────────
@@ -520,7 +530,7 @@ class Game implements GameView {
           : p.base.tactic === 'S'
             ? '衛星型のあなたは、白い襟巻きをまとい、主のそばで隙を待つ。'
             : '忍び型のあなたは、メスに似た姿でハーレムに紛れ込む。'),
-        h('div', { style: 'margin-top:6px' }, '右の欄で今日の方針を選び、「▶ 進める」で日が進む。挑まれたときはその場で判断を求められる。'),
+        h('div', { style: 'margin-top:6px' }, '時間は止まっている。浜のすぐ下の「▶ 自動で進める」で日が流れ、「次の日へ」で 1 日ずつ進む。方針（挑む・守るなど）は日が進む前にいつでも選べる。挑まれたときはその場で判断を求められる。'),
         h('div', { class: 'row' }, btn('浜へ', () => done(), 'primary')),
       ),
     );
@@ -545,7 +555,7 @@ class Game implements GameView {
         h('h3', null, '採餌期'),
         h('div', null, '繁殖期のあとは海で食べて体力を戻す。欲張るほど太れるが、シャチに狙われやすい。ホコが大きいほど泳ぎが遅く、狙われやすい。'),
         h('h3', null, '操作'),
-        h('div', null, 'スペース：進める／止める　Enter：1日進める　浜の個体をクリック：詳しく見る'),
+        h('div', null, '浜の下の「▶ 自動で進める」で時間が流れ、「次の日へ」で 1 日ずつ進む。キーボードでは、スペースで進める／止める、Enter で 1 日進める。浜の個体をクリックすると詳しく見られる。'),
         h('div', { class: 'row' }, btn('閉じる', () => done(), 'primary')),
       ),
     );
