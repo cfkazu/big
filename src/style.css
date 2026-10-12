@@ -731,6 +731,16 @@ h3::before {
   white-space: normal;
 }
 
+.btn .note {
+  color: var(--gold1);
+  text-shadow: none;
+  margin-top: 2px;
+}
+
+.btn.primary .note {
+  color: var(--ink);
+}
+
 .list {
   display: grid;
   gap: 4px;

@@ -275,13 +275,36 @@ export class World {
 
   /** 初代の候補：6〜7 歳の若いオスから 3 頭（主型を 2 頭以上） */
   founderCandidates(): Individual[] {
-    const males = this.rng.shuffle(this.living().filter((i) => i.sex === 'M' && this.age(i) >= 6 && this.age(i) <= 7 && this.slotOf(i) === null));
-    const r = males.filter((m) => m.base.tactic === 'R');
-    const other = males.filter((m) => m.base.tactic !== 'R');
-    const picks = r.slice(0, other.length > 0 ? 2 : 3);
-    if (other.length > 0) picks.push(other[0]);
-    while (picks.length < 3 && r.length > picks.length) picks.push(r[picks.length]);
-    return picks;
+    return this.founderOptions().map((o) => o.ind);
+  }
+
+  /**
+   * 初代の候補を、難しさの違う 4 種類から用意する：
+   * 大物（素質が最も高い）・並（群れの中ほど）・小兵（素質は低いが精巣の大きい者）・変わり種（衛星型か忍び型）
+   */
+  founderOptions(): FounderOption[] {
+    const pool = (lo: number, hi: number) =>
+      this.living().filter((i) => i.sex === 'M' && this.age(i) >= lo && this.age(i) <= hi && this.slotOf(i) === null);
+    let r = pool(6, 7).filter((m) => m.base.tactic === 'R');
+    if (r.length < 6) r = pool(5, 8).filter((m) => m.base.tactic === 'R');
+    r.sort((a, b) => b.base.hoko - a.base.hoko);
+    const out: FounderOption[] = [];
+    const used = new Set<number>();
+    const take = (ind: Individual | undefined, kind: FounderOption['kind']) => {
+      if (!ind || used.has(ind.id)) return;
+      used.add(ind.id);
+      out.push({ ind, kind });
+    };
+    take(r[0], 'big');
+    // 並：群れの平均にいちばん近い者
+    const mean = this.herdHokoMean();
+    take([...r].slice(1).sort((a, b) => Math.abs(a.base.hoko - mean) - Math.abs(b.base.hoko - mean))[0], 'mid');
+    // 小兵：下位 3 分の 1 の中で、精巣がいちばん大きい者
+    const low = r.slice(Math.floor((r.length * 2) / 3));
+    take([...low].sort((a, b) => b.base.testis - a.base.testis)[0], 'small');
+    const odd = this.rng.shuffle(pool(5, 8).filter((m) => m.base.tactic !== 'R'));
+    take(odd[0], 'odd');
+    return out;
   }
 
   choosePlayer(id: number, asFounder: boolean): void {
@@ -1617,6 +1640,12 @@ export class World {
     });
     if (this.history.length > 300) this.history.shift();
   }
+}
+
+export interface FounderOption {
+  ind: Individual;
+  /** big：大物（やさしい）、mid：並（ふつう）、small：小兵（むずかしい）、odd：変わり種 */
+  kind: 'big' | 'mid' | 'small' | 'odd';
 }
 
 export interface HeadRecord {

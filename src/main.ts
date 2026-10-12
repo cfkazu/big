@@ -11,6 +11,7 @@ import {
   type ForageStrategy,
   type GroomType,
   type Stance,
+  type FounderOption,
   type LogKind,
   type Prompt,
   type SeasonSummary,
@@ -642,15 +643,18 @@ class Game implements GameView {
     this.scene.setWorld(w);
     overlay.classList.remove('show');
     this.best = { share: 0, year: w.year };
-    const cands = w.founderCandidates();
+    const options = w.founderOptions();
     const pick = await ask<number>((done) => {
       const box = h('div', { class: 'choices' });
-      for (const c of cands) box.append(this.candidateButton(c, () => done(c.id)));
+      for (const o of options) {
+        const { tag, note } = founderBlurb(o.kind, o.ind);
+        box.append(this.candidateButton(o.ind, () => done(o.ind.id), tag, undefined, note, true));
+      }
       return h(
         'div',
         null,
         h('h2', null, '初代を選ぶ'),
-        h('div', { class: 'sub' }, '若いオスが三頭。誰として生き、血を残すか。数字は今の姿で、遺伝子は子に半分ずつ受け継がれる。'),
+        h('div', { class: 'sub' }, `若いオスが${options.length}頭。誰として生き、血を残すか。星はホコの素質を群れの平均と比べたもの（★★★が平均）。遺伝子は子に半分ずつ受け継がれる。`),
         box,
       );
     });
@@ -661,7 +665,7 @@ class Game implements GameView {
     await this.showIntro();
   }
 
-  private candidateButton(c: Individual, onclick: () => void, extra?: string, compareTo?: Individual): HTMLElement {
+  private candidateButton(c: Individual, onclick: () => void, extra?: string, compareTo?: Individual, note?: string, compact = false): HTMLElement {
     const w = this.world;
     const y = w.year;
     const temper = c.base.aggression > 0.62 ? '短気' : c.base.aggression < 0.38 ? '温厚' : '並の気性';
@@ -685,9 +689,10 @@ class Game implements GameView {
             ? h('span', { class: c.base.hoko >= compareTo.base.hoko ? 'up' : 'down' }, `（先代より${c.base.hoko >= compareTo.base.hoko ? '+' : ''}${(c.base.hoko - compareTo.base.hoko).toFixed(1)}）`)
             : null,
         ),
-        h('div', { class: 'sub' }, `精巣 ${Math.round(c.base.testis)}g・体重 ${Math.round(c.base.body)}kg（成熟時）`),
-        h('div', { class: 'sub' }, `${temper}${bold ? '・' + bold : ''}・活力 ${Math.round(c.base.vigor * 100)}%　母 ${mother?.name ?? '不明'}／父 ${father?.name ?? '不明'}`),
-        h('div', { class: 'sub' }, `いまのホコ ${hokoDisplay(c, y).toFixed(1)}cm・精巣 ${Math.round(testisMass(c, y))}g・体重 ${Math.round(bodyMass(c, y))}kg`),
+        h('div', { class: 'sub' }, `精巣 ${Math.round(c.base.testis)}g・体重 ${Math.round(c.base.body)}kg（成熟時）・${temper}${bold ? '・' + bold : ''}`),
+        compact ? null : h('div', { class: 'sub' }, `活力 ${Math.round(c.base.vigor * 100)}%　母 ${mother?.name ?? '不明'}／父 ${father?.name ?? '不明'}`),
+        compact ? null : h('div', { class: 'sub' }, `いまのホコ ${hokoDisplay(c, y).toFixed(1)}cm・精巣 ${Math.round(testisMass(c, y))}g・体重 ${Math.round(bodyMass(c, y))}kg`),
+        note ? h('div', { class: 'note' }, note) : null,
       ),
     );
   }
@@ -943,6 +948,22 @@ class Game implements GameView {
       ),
     );
     location.reload();
+  }
+}
+
+/** 初代の候補の種類ごとの名札と、遊び方のひとこと */
+function founderBlurb(kind: FounderOption['kind'], ind: Individual): { tag: string; note: string } {
+  switch (kind) {
+    case 'big':
+      return { tag: '大物・やさしい', note: 'ホコが大きく、見せ合いに強い。最初から主の座を狙える。' };
+    case 'mid':
+      return { tag: '並・ふつう', note: '群れの中ほど。相手を選び、駆け引きで浜を取る。' };
+    case 'small':
+      return { tag: '小兵・むずかしい', note: '見せ合いでは分が悪い。そのぶん精巣が大きく、うろついて見張りの外のメスとつがえば、精子のくじ引きで勝てる。' };
+    case 'odd':
+      return ind.base.tactic === 'S'
+        ? { tag: '変わり種', note: '衛星型。白いたてがみで主のそばに控え、主が喧嘩する隙につがう。' }
+        : { tag: '変わり種', note: '忍び型。メスに似た姿でハーレムに紛れ込む。体は小さいが精巣は大きい。' };
   }
 }
 

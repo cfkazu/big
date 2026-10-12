@@ -275,3 +275,16 @@ describe('世代の進歩', () => {
     expect(est.value).toBeLessThan(70);
   });
 });
+
+describe('初代の候補', () => {
+  it('大物・並・小兵の順にホコの素質が下がり、小兵は精巣が大きめ', () => {
+    for (const seed of [41, 42, 43]) {
+      const w = World.create(seed, 40);
+      const opts = w.founderOptions();
+      const by = (k: string) => opts.find((o) => o.kind === k)!.ind;
+      expect(by('big').base.hoko).toBeGreaterThan(by('mid').base.hoko);
+      expect(by('mid').base.hoko).toBeGreaterThan(by('small').base.hoko);
+      expect(new Set(opts.map((o) => o.ind.id)).size).toBe(opts.length);
+    }
+  });
+});
