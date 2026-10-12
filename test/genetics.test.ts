@@ -1,0 +1,134 @@
+import { describe, expect, it } from 'vitest';
+import {
+  COAT_B,
+  COAT_P,
+  LOCUS_INDEX,
+  TACTIC_F,
+  TACTIC_R,
+  TACTIC_S,
+  allelesAt,
+  coatOf,
+  fertilize,
+  makeGamete,
+  randomGenome,
+  recombine,
+  tacticOf,
+  type Genome,
+} from '../src/sim/genetics';
+import { Rng } from '../src/sim/rng';
+import { World } from '../src/sim/world';
+
+function setAllele(g: Genome, locusId: string, which: 0 | 1, value: number) {
+  const { chrom, idx } = LOCUS_INDEX[locusId];
+  if (chrom === 'A1' || chrom === 'A2' || chrom === 'A3') g.auto[chrom][which][idx] = value;
+  else if (chrom === 'X') (which === 0 ? g.sex1 : g.sex2)[idx] = value;
+  else g.sex2[idx] = value;
+}
+
+describe('メンデル遺伝', () => {
+  it('ヘテロ同士の交配で毛色の淡（劣性ホモ）がおよそ 1/4 出る', () => {
+    const rng = new Rng(42);
+    const mom = randomGenome('F', rng);
+    const dad = randomGenome('M', rng);
+    for (const g of [mom, dad]) {
+      setAllele(g, 'COAT', 0, COAT_B);
+      setAllele(g, 'COAT', 1, COAT_P);
+    }
+    let pale = 0;
+    const n = 4000;
+    for (let i = 0; i < n; i++) {
+      const kid = fertilize(makeGamete(mom, rng), makeGamete(dad, rng));
+      if (coatOf(kid) === 'pale') pale++;
+    }
+    expect(pale / n).toBeGreaterThan(0.22);
+    expect(pale / n).toBeLessThan(0.28);
+  });
+
+  it('性比はおよそ 1:1', () => {
+    const rng = new Rng(7);
+    const mom = randomGenome('F', rng);
+    const dad = randomGenome('M', rng);
+    let males = 0;
+    for (let i = 0; i < 4000; i++) if (fertilize(makeGamete(mom, rng), makeGamete(dad, rng)).sex === 'M') males++;
+    expect(males / 4000).toBeGreaterThan(0.47);
+    expect(males / 4000).toBeLessThan(0.53);
+  });
+
+  it('Y 連鎖のホコ座位は父から息子にだけ伝わる', () => {
+    const rng = new Rng(3);
+    const mom = randomGenome('F', rng);
+    const dad = randomGenome('M', rng);
+    setAllele(dad, 'HOKOY', 1, 99);
+    for (let i = 0; i < 200; i++) {
+      const kid = fertilize(makeGamete(mom, rng), makeGamete(dad, rng));
+      const y = allelesAt(kid, 'HOKOY');
+      if (kid.sex === 'M') expect(Math.abs(y[0] - 99)).toBeLessThan(10); // 突然変異の幅だけずれうる
+      else expect(y).toEqual([]);
+    }
+  });
+
+  it('戦略スーパージーン：S/F は優性で、2 本そろうと致死', () => {
+    const rng = new Rng(5);
+    const g = randomGenome('M', rng);
+    const cases: [number, number, string | null][] = [
+      [TACTIC_R, TACTIC_R, 'R'],
+      [TACTIC_R, TACTIC_S, 'S'],
+      [TACTIC_F, TACTIC_R, 'F'],
+      [TACTIC_S, TACTIC_S, null],
+      [TACTIC_S, TACTIC_F, null],
+      [TACTIC_F, TACTIC_F, null],
+    ];
+    for (const [a, b, want] of cases) {
+      setAllele(g, 'TACTIC', 0, a);
+      setAllele(g, 'TACTIC', 1, b);
+      expect(tacticOf(g)).toBe(want);
+    }
+  });
+});
+
+describe('組換え', () => {
+  it('組換え率は Haldane の写像関数 r = (1 - e^{-2d}) / 2 に従う', () => {
+    // A1 上の HOKO1(12cM) と COAT(58cM)：d = 0.46 M → r ≈ 0.301
+    const rng = new Rng(11);
+    const i1 = LOCUS_INDEX.HOKO1.idx;
+    const i2 = LOCUS_INDEX.COAT.idx;
+    const len = 30;
+    const h1 = new Array(len).fill(0);
+    const h2 = new Array(len).fill(1);
+    let rec = 0;
+    const n = 20000;
+    for (let i = 0; i < n; i++) {
+      const out = recombine(h1, h2, 'A1', rng);
+      if (out[i1] !== out[i2]) rec++;
+    }
+    const expected = (1 - Math.exp(-2 * 0.46)) / 2;
+    expect(Math.abs(rec / n - expected)).toBeLessThan(0.015);
+  });
+});
+
+describe('群れのシミュレーション', () => {
+  it('60 年回しても絶滅も爆発もしない', () => {
+    const w = World.create(123, 0);
+    for (let y = 0; y < 60; y++) w.simulateYearAuto();
+    const pop = w.living().length;
+    expect(pop).toBeGreaterThan(100);
+    expect(pop).toBeLessThan(350);
+    const h = w.history[w.history.length - 1];
+    expect(h.births).toBeGreaterThan(10);
+  });
+
+  it('子の父は実際に交尾したオスで、創始血統の割合は両親の平均', () => {
+    const w = World.create(9, 20);
+    const founder = w.founderCandidates()[0];
+    w.choosePlayer(founder.id, true);
+    for (let y = 0; y < 8; y++) w.simulateYearAuto();
+    for (const ind of w.inds.values()) {
+      if (ind.motherId == null || ind.fatherId == null || ind.id === founder.id) continue;
+      const m = w.get(ind.motherId)!;
+      const f = w.get(ind.fatherId)!;
+      expect(ind.dynasty).toBeCloseTo((m.dynasty + f.dynasty) / 2, 10);
+      expect(f.sex).toBe('M');
+      expect(m.sex).toBe('F');
+    }
+  });
+});
