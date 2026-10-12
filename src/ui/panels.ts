@@ -90,8 +90,9 @@ function playerCard(g: GameView): HTMLElement {
     stat('ホコ', bar(hoko / 70, 'hoko'), `${hoko.toFixed(1)}cm`),
     stat('　素質', h('span', { class: 'sub' }, `${age < 7 ? '7歳まで育つ・' : ''}張り${Math.round(hokoFirmness(p) * 100)}%`), `${p.base.hoko.toFixed(1)}cm`),
     stat('貯精', bar(spermCap ? sperm / spermCap : 0, 'sperm'), `${Math.round(sperm)}億`),
-    stat('序列', h('span', { class: 'sub' }, rank ? `戦績順・${rank.of}頭中` : '―'), rank ? `${rank.rank}位` : '―'),
+    stat('戦績', h('span', { class: 'sub' }, rank ? `見せ合い・取っ組み合いの勝ち負け順・${rank.of}頭中` : '―'), rank ? `${rank.rank}位` : '―'),
     stat('ハーレム', bar(cap ? Math.min(1, harem / cap) : 0, 'love'), slot !== null ? `${harem}頭/見張${cap}` : 'なし'),
+    p.season.peakHarem > 0 || slot !== null ? stat('　今季', h('span', { class: 'sub' }, slot !== null ? `浜で${haremOrder(w, slot)}番目の大所帯` : ''), `最大${Math.max(p.season.peakHarem, harem)}頭`) : null,
     stat('今季交尾', h('span'), `${p.season.matings}回`),
     stat('子', h('span'), `${p.childIds.length}頭`),
   );
@@ -109,6 +110,14 @@ function playerCard(g: GameView): HTMLElement {
         )
       : null;
   return h('div', { class: 'win gold' }, cardHead, stats, thought, yesterday, actions(g, p));
+}
+
+/** その浜のハーレムが、浜全体で何番目に大きいか */
+function haremOrder(w: World, slot: number): number {
+  const n = w.slotFemales(slot).length;
+  let order = 1;
+  for (let s = 0; s < w.slotHolders.length; s++) if (s !== slot && w.slotHolders[s] != null && w.slotFemales(s).length > n) order++;
+  return order;
 }
 
 function stat(k: string, mid: HTMLElement, v: string): HTMLElement {
@@ -135,7 +144,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
     const harem = holder ? w.slotFemales(w.slotOf(p)!).length : 0;
     const hintText = holder
       ? harem === 0
-        ? 'まだメスがいない。メスは浜を見て回り、魅力のある主のもとへ自然に集まってくる。脂肪とホコの張りを保ち、浜を騒がしくしないで待とう。'
+        ? `まだメスがいない。メスは浜を見て回り、魅力のある主のもとへ自然に集まってくる。浜を騒がしくしないで待とう。${st === 'guard' ? '「守る」のままだと待つあいだ痩せていく。「おまかせ」なら海で食べて蓄える。' : ''}`
         : '主として浜を守っている。挑戦者を退け、メスを見張れ。「おまかせ」なら様子を見てメスに構ってくれる。'
       : age < 5
         ? 'まだ挑むには若い。うろついて、隙をうかがおう。'
@@ -522,7 +531,7 @@ export function renderLog(g: GameView, root: HTMLElement): void {
       h(
         'div',
         { class: `entry k-${e.kind}`, onclick: who ? () => g.select(who.id) : undefined },
-        h('span', { class: 'when' }, e.day >= BREED_DAYS ? `${w.displayYear(e.year)}年 冬` : `${w.displayYear(e.year)}年${e.day + 1}日`),
+        h('span', { class: 'when' }, e.day >= BREED_DAYS ? `${w.displayYear(e.year)}年 冬` : e.day < 0 ? `${w.displayYear(e.year)}年 春` : `${w.displayYear(e.year)}年${e.day + 1}日`),
         h('span', null, e.text),
       ),
     );

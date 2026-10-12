@@ -157,6 +157,7 @@ class Game implements GameView {
     const strategy = await this.showSeasonReport(summary);
     const rep = w.forage(strategy);
     this.trackBest();
+    this.refresh();
     // 沖でのシャチの襲撃を見せてから報告を出す
     const kills = rep.deaths.filter((d) => d.cause === 'orca').length;
     if (kills > 0) {
@@ -262,42 +263,70 @@ class Game implements GameView {
     const w = this.world;
     const p = w.player;
     if (!p) return;
-    const targets = w.challengeTargets();
     const myHoko = hokoDisplay(p, w.year);
+    // 見立ては開いた時点で一度だけ計算し、絞り込みや並べ替えで使い回す
+    const rows = w.challengeTargets().map((t) => {
+      const m = w.get(t.id)!;
+      return { t, m, v: w.challengeVerdict(m), estrus: t.isHolder ? w.slotEstrus(t.slot!) : null };
+    });
+    const remaining = w.estrusRemaining();
+    const late = w.day >= 28 || remaining <= 2;
     const id = await ask<number | null>((done) => {
+      let holdersOnly = false;
+      let byOdds = false;
       const list = h('div', { class: 'list' });
-      for (const t of targets) {
-        const m = w.get(t.id)!;
-        // 差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合い（体重・脂肪・主の粘り）で決まる
-        const v = w.challengeVerdict(m);
-        const oddsText = `勝ち目${Math.round(v.odds * 10)}割`;
-        const verdict =
-          v.kind === 'displayLose' ? '見せ合いで負けそう' : v.kind === 'displayWin' ? '見せ合いで勝てそう' : `組み合いに・${oddsText}`;
-        list.append(
-          h(
-            'button',
-            { class: 'btn item', onclick: () => done(t.id) },
+      const render = () => {
+        clear(list);
+        let shown = rows.filter((r) => !holdersOnly || r.t.isHolder);
+        if (byOdds) shown = [...shown].sort((a, b) => (b.v.kind === 'displayWin' ? 2 : b.v.odds) - (a.v.kind === 'displayWin' ? 2 : a.v.odds));
+        for (const { t, m, v, estrus } of shown) {
+          const oddsText = `勝ち目${Math.round(v.odds * 10)}割`;
+          // プレイヤーは見せ合いで自分からは引かないので、分が悪くても取っ組み合うかどうかの判断になる
+          const verdict =
+            v.kind === 'displayLose' ? `見せ合いでは分が悪い・組めば${oddsText}` : v.kind === 'displayWin' ? '見せ合いで勝てそう' : `互角・組めば${oddsText}`;
+          list.append(
             h(
-              'span',
-              null,
-              t.isHolder ? '♛ ' : '',
-              m.name,
-              h('span', { class: 'sub' }, ` ${w.age(m)}歳・${Math.round(bodyMass(m, w.year))}kg${t.isHolder ? `・ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`),
-              // 主は繁殖期の後半ほど痩せて弱る。挑む時期を選ぶ手がかり。
-              t.isHolder ? h('span', { class: m.condition < 0.4 ? 'down' : 'sub' }, `・脂肪${Math.round(m.condition * 100)}%${m.condition < 0.4 ? '（痩せてきた）' : ''}`) : null,
+              'button',
+              { class: 'btn item', onclick: () => done(t.id) },
+              h(
+                'span',
+                null,
+                t.isHolder ? '♛ ' : '',
+                m.name,
+                h('span', { class: 'sub' }, ` ${w.age(m)}歳・${Math.round(bodyMass(m, w.year))}kg${t.isHolder ? `・ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`),
+                // 奪ったときの見返り：いま発情しているメスと、これから発情するメス
+                estrus ? h('span', { class: estrus.now + estrus.later > 0 ? 'up' : 'sub' }, `・発情中${estrus.now}・これから${estrus.later}`) : null,
+                // 主は繁殖期の後半ほど痩せて弱る
+                t.isHolder ? h('span', { class: m.condition < 0.4 ? 'down' : 'sub' }, `・脂肪${Math.round(m.condition * 100)}%${m.condition < 0.4 ? '（痩せてきた）' : ''}`) : null,
+                // メスの手入れで乗ったツヤの分だけ、ホコは大きく見える
+                m.shine > 0.02 ? h('span', { class: 'sub' }, `・ツヤ+${Math.round(m.shine * 100)}%`) : null,
+              ),
+              h('span', { class: 'sub' }, verdict),
+              h('span', null, `推定${t.perceived.toFixed(1)}cm`),
             ),
-            h('span', { class: 'sub' }, verdict),
-            h('span', null, `推定${t.perceived.toFixed(1)}cm`),
-          ),
-        );
-      }
-      if (targets.length === 0) list.append(h('div', { class: 'sub' }, '浜に挑める相手がいない。'));
+          );
+        }
+        if (shown.length === 0) list.append(h('div', { class: 'sub' }, '浜に挑める相手がいない。'));
+      };
+      const filterBtn = btn('主だけ', () => {
+        holdersOnly = !holdersOnly;
+        filterBtn.classList.toggle('on', holdersOnly);
+        render();
+      }, 'small');
+      const sortBtn = btn('勝ち目順', () => {
+        byOdds = !byOdds;
+        sortBtn.classList.toggle('on', byOdds);
+        render();
+      }, 'small');
+      render();
       return h(
         'div',
         null,
         h('h2', null, '誰に挑む？'),
-        h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm。相手の大きさは見た目の推定で、多少の見誤りがある。主に勝てば、その浜とハーレムを奪える。ただし浜の主は守りに入ると手強い。`),
-        h('div', { class: 'sub' }, `あなたの体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。ホコの差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合いになって体重と脂肪がものを言う。浜の主は簡単には引かないので、見せ合いで勝つには 2 割ほど大きいホコが要る。取っ組み合いでも主は粘る。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。`),
+        late ? h('div', { class: 'note', style: 'margin-bottom:4px' }, `この浜で発情を残しているメスは、あと${remaining}頭ほど。いま浜を奪っても、今季はつがえないかもしれない。`) : null,
+        h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm・体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。相手の大きさは見た目の推定で、多少の見誤りがある。`),
+        h('div', { class: 'sub' }, '浜の主は簡単には引かないので、見せ合いで勝つには 2 割ほど大きいホコが要る。それ以外は取っ組み合うかどうかの判断になり、体重と脂肪がものを言う。主に勝てば、その浜とハーレムを奪える。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。'),
+        h('div', { class: 'tabs', style: 'margin:6px 0' }, filterBtn, sortBtn),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );
@@ -781,7 +810,7 @@ class Game implements GameView {
         ),
         ...sec(
           'ホコの大きさ',
-          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの脂肪で決まる「張り」が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。繁殖期の途中で痩せても、張りはその季節のあいだ変わらない。ハーレムのメスにホコの手入れをしてもらうとツヤが出て、その分だけ大きく見える。12歳を過ぎると少しずつ縮む。',
+          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの脂肪で決まる「張り」が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。繁殖期の途中で痩せても、張りはその季節のあいだ変わらない。ハーレムのメスにホコの手入れをしてもらうとツヤが乗り、最大で1割ほど大きく見える（大きなハーレムの主ほど手入れされ、ますます大きく見える）。12歳を過ぎると少しずつ縮む。',
         ),
         ...sec(
           '脂肪',
@@ -792,6 +821,7 @@ class Game implements GameView {
         ...sec(
           'ハーレム',
           'メスは浜に着くたびに、どの主のもとにいるかを選び直す。主の魅力（ホコの大きさ、または穏やかさ。好みはメスによる）と浜の居心地で決まる。去年身を寄せた主のもとへは戻りやすく、戻ったメスは最初からよく懐いている。懐きやすさはメスによって違う。',
+          'メスの発情は、繁殖期のおよそ10〜30日目に、一頭につき3日ずつ来る。発情の終わったメスとはつがえないので、浜を奪うなら早いほど見返りが大きい。挑戦の一覧には、主ごとに発情中のメスとこれから発情するメスの数が出る。',
           '主が見張れるメスの数は脂肪で決まる。見張りを超えて混み合うとメスは窮屈で出ていき、見張りの外のメスはほかのオスとつがってしまう。浜で喧嘩が起きると騒がしくなり、子が踏まれることもあって、メスが去っていく。',
           '主は繁殖期のあいだ食べずに浜を守るので、1日に1.1%ずつ、一季で4割以上も痩せる。脂肪が13%を切ると浜にいられなくなる。メスのいない日や発情の近いメスがいない日は「海で食べる」で蓄えよう（「おまかせ」は自分でそうする）。',
         ),
@@ -819,13 +849,21 @@ class Game implements GameView {
     const maxCm = Math.max(70, pr.self, pr.perceivedOpp);
     const ruler = (cm: number, cls: string) => h('div', { class: `ruler ${cls}` }, h('i', { style: `height:${((cm / maxCm) * 100).toFixed(1)}%` }));
     return ask<Answer>((done) => {
-      const title = pr.kind === 'challenged' ? `${opp.name}が見せ合いを挑んできた！` : `${opp.name}と互角のにらみ合い`;
+      const gap = pr.perceivedOpp / Math.max(1, pr.self);
+      const title =
+        pr.kind === 'challenged'
+          ? `${opp.name}が見せ合いを挑んできた！`
+          : gap > 1.15
+            ? `${opp.name}のホコは明らかに大きい`
+            : gap < 0.87
+              ? `${opp.name}はホコで劣るのに引かない`
+              : `${opp.name}と互角のにらみ合い`;
       const lose = pr.kind === 'challenged' ? pr.slotAtStake : w.player && w.slotOf(w.player) !== null;
       const desc =
         pr.kind === 'challenged'
           ? `受けて立つ：ホコを見せ合う。差がはっきりすれば小さい方が引き、僅差ならもう一度、取っ組み合うかを選べる。引く：戦わずに負け${lose ? '、浜とハーレムを明け渡す' : '。ケガはしない'}。`
           : pr.challenger
-            ? '見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければケガを負う。引く：自分から挑んだ勝負なので、ここで身を引いても序列の下がり方は半分で済む。'
+            ? `${gap > 1.15 ? '見せ合いでは分が悪い。' : gap < 0.87 ? '相手は大きさの差を認めず、引こうとしない。' : '見せ合いでは決着がつかない。'}取っ組み合う：体格と脂肪がものを言い、負ければケガを負う。引く：自分から挑んだ勝負なので、ここで身を引いても序列の下がり方は半分で済む。`
             : `見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければケガを負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
       return h(
         'div',
@@ -927,17 +965,23 @@ class Game implements GameView {
     if (cands.length === 0) {
       // 息子はいなくても、娘たちに血が残っていれば、孫息子の誕生を待つ
       const daughters = w.living().filter((i) => i.sex === 'F' && i.dynasty > 0);
-      if (daughters.length === 0) {
+      const carriers = w.carriersOfLine().filter((f) => !daughters.includes(f));
+      if (daughters.length === 0 && carriers.length === 0) {
         await this.gameOver();
         return false;
       }
+      const names = (xs: Individual[]) => xs.map((d) => d.name).join('、');
       await ask<void>((done) =>
         h(
           'div',
           null,
-          h('h2', null, '血は娘たちに'),
-          h('div', null, `跡を継げるオスはいない。だが、${daughters.map((d) => d.name).join('、')}がその血を宿している。`),
-          h('div', { style: 'margin-top:6px' }, '娘たちが息子を産み、育つのを待とう。'),
+          h('h2', null, daughters.length ? '血は娘たちに' : '血はまだおなかの中に'),
+          h(
+            'div',
+            null,
+            `跡を継げるオスはいない。だが、${[daughters.length ? `${names(daughters)}がその血を引いている` : '', carriers.length ? `${names(carriers)}が一族の子を身ごもっている` : ''].filter(Boolean).join('。そして')}。`,
+          ),
+          h('div', { style: 'margin-top:6px' }, '息子が生まれ、育つのを待とう。'),
           h('div', { class: 'row' }, btn('時を待つ', () => done(), 'primary')),
         ),
       );

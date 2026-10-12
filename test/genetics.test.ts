@@ -349,3 +349,48 @@ describe('見立てとおまかせ', () => {
     expect(w.playerStance.kind).toBe('auto');
   });
 });
+
+describe('不具合の修正', () => {
+  it('海で食べても脂肪は100%を超えない', () => {
+    const w = World.create(61, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    p.condition = 0.995;
+    w.setPlayerStance({ kind: 'rest' });
+    for (let d = 0; d < 3; d++) {
+      const g = w.runDay();
+      let r = g.next();
+      while (!r.done) r = g.next('retreat');
+    }
+    expect(p.condition).toBeLessThanOrEqual(1);
+  });
+
+  it('一族の子を身ごもったメスがいれば、血はまだ絶えていない', () => {
+    const w = World.create(62, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    const p = w.player!;
+    for (const i of w.living()) if (i.id !== p.id) i.dynasty = 0;
+    const f = w.living().find((i) => i.sex === 'F' && w.age(i) >= 4)!;
+    f.pregnancy = { fatherId: p.id, genome: f.genome, conceivedYear: w.year };
+    p.alive = false;
+    expect(w.heirCandidates()).toHaveLength(0);
+    expect(w.lineSurvives()).toBe(true);
+    expect(w.carriersOfLine().map((x) => x.id)).toContain(f.id);
+  });
+});
+
+describe('発情の見込み', () => {
+  it('ハーレムの発情中・これからの数と、浜全体の残りを数える', () => {
+    const w = World.create(71, 20);
+    w.startBreedingSeason();
+    const s = w.slotHolders.findIndex((id) => id != null);
+    const fs = w.slotFemales(s);
+    const { now, later } = w.slotEstrus(s);
+    const expectNow = fs.filter((f) => f.estrusStart >= 0 && w.day >= f.estrusStart && w.day < f.estrusStart + 3).length;
+    const expectLater = fs.filter((f) => f.estrusStart > w.day).length;
+    expect(now).toBe(expectNow);
+    expect(later).toBe(expectLater);
+    expect(w.estrusRemaining()).toBeGreaterThanOrEqual(now + later);
+  });
+});

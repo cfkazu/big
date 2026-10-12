@@ -192,7 +192,9 @@ export class World {
   private birthsThisYear = 0;
   private slotCache: Map<number, Individual[]> | null = null;
   /** 主のとき、おまかせを選んでいるか */
-  holderAuto = false;
+  holderAuto = true;
+  /** プレイヤーが主なのに、メスが一頭もいない日が続いた日数 */
+  private emptyHaremDays = 0;
   /** 今日の行動をおまかせで決めたか（翌朝またおまかせに戻す） */
   private autoToday = false;
   /** 今日プレイヤーがなだめた浜 */
@@ -350,7 +352,8 @@ export class World {
       peakHarem: 0,
     });
     if (asFounder) this.bestHoko = { id: p.id, name: p.name, value: p.base.hoko, year: this.year };
-    this.holderAuto = false;
+    // 主になったら、まずは「おまかせ」。守りに徹したいときは「守る」を選ぶ。
+    this.holderAuto = true;
     this.playerStance = this.defaultStance(p);
     this.pushLog(`${p.name}として生きる。`, 'player', p.id);
   }
@@ -443,11 +446,21 @@ export class World {
   }
 
   /** 当主不在のまま年を進め、血を引くオスが生まれるのを待つ。経過年数を返す。 */
+  /** 一族の子を身ごもっているメス（父が一族） */
+  carriersOfLine(): Individual[] {
+    return this.living().filter((f) => f.sex === 'F' && f.pregnancy && (this.get(f.pregnancy.fatherId)?.dynasty ?? 0) > 0);
+  }
+
+  /** 血がまだ残っているか（生きている一族、または一族の子を宿したメス） */
+  lineSurvives(): boolean {
+    return this.living().some((i) => i.dynasty > 0) || this.carriersOfLine().length > 0;
+  }
+
   waitForHeir(maxYears: number): number {
     const keepPlayer = this.playerId;
     this.playerId = null;
     let n = 0;
-    while (n < maxYears && this.heirCandidates().length === 0 && this.living().some((i) => i.dynasty > 0)) {
+    while (n < maxYears && this.heirCandidates().length === 0 && this.lineSurvives()) {
       this.simulateYearAuto();
       n++;
     }
@@ -635,7 +648,7 @@ export class World {
       this.think(m, 'takeHarem', { other: '空き' });
       if (m.id === this.playerId) {
         this.pushLog(`空いた浜を手に入れた。ハーレムの主になった！`, 'player', m.id);
-        this.playerStance = { kind: 'guard' };
+        this.playerStance = this.defaultStance(this.player!);
       }
     }
   }
@@ -744,7 +757,7 @@ export class World {
       else drain = ind.pupId ? 0.009 : 0.005;
       // 「海で食べる」日は、痩せるどころか少し戻る
       if (ind.id === this.playerId && this.playerStance.kind === 'rest') drain = -0.012;
-      ind.condition = Math.max(0, ind.condition - drain);
+      ind.condition = Math.min(1, Math.max(0, ind.condition - drain));
       if (ind.sex === 'M') ind.sperm = Math.min(spermCapacity(ind, y), ind.sperm + spermDaily(ind, y));
       ind.injury = Math.max(0, ind.injury - 0.008);
     }
@@ -780,6 +793,14 @@ export class World {
       }
     }
 
+    // メスのいない浜を「守る」で守り続けていたら、知らせる
+    const ps = pl ? this.slotOf(pl) : null;
+    if (pl && ps !== null && this.slotFemales(ps).length === 0) {
+      this.emptyHaremDays++;
+      if (this.emptyHaremDays === 3 && this.playerStance.kind === 'guard') {
+        this.pushLog('もう3日、ハーレムにメスがいない。守っても痩せるだけだ。「おまかせ」か「海で食べる」にすれば、待つあいだに蓄えられる。', 'player', pl.id);
+      }
+    } else this.emptyHaremDays = 0;
     // 痩せすぎの警告
     if (pl && pl.onBeach && pl.sex === 'M' && this.age(pl) >= 4 && pl.condition < 0.2 && this.day % 3 === 0) {
       this.pushLog(`脂肪が${Math.round(pl.condition * 100)}%しかない。10%を切ると浜にいられなくなる。「海で食べる」で取り戻そう。`, 'player', pl.id);
@@ -1009,6 +1030,7 @@ export class World {
     me.elo -= 8 * (1 - e);
     this.dayEvents.push({ kind: 'display', aId: opp.id, bId: me.id, winnerId: opp.id, slot, withdrew: true });
     this.pushLog(`${opp.name}とにらみ合ったが、組み合う前に身を引いた。`, 'player', me.id);
+    this.think(me, 'withdrew', { about: opp });
   }
 
   private resolveWin(w: Individual, l: Individual, kind: 'display' | 'fight', slot: number | null): void {
@@ -1051,7 +1073,7 @@ export class World {
       }
       if (w.id === pid) {
         this.pushLog(`${l.name}から浜を奪った！ ハーレムの主になった。`, 'player', w.id);
-        this.playerStance = { kind: 'guard' };
+        this.playerStance = this.defaultStance(this.player!);
       }
       if (l.id === pid) {
         this.pushLog(`${w.name}に浜を奪われた……`, 'player', l.id);
@@ -1141,6 +1163,27 @@ export class World {
     const stay = f.slot === s ? 0.35 + f.loyalty * 1.2 : 0;
     const sats = Math.min(2, this.satelliteCount[s] ?? 0) * 0.15;
     return attract - crowd - harass + company + stay + sats + familiar + this.rng.normal(0, 0.3);
+  }
+
+  /** ハーレムのメスのうち、いま発情しているメスと、これから発情するメスの数 */
+  slotEstrus(slot: number): { now: number; later: number } {
+    let now = 0;
+    let later = 0;
+    for (const f of this.slotFemales(slot)) {
+      if (f.estrusStart < 0) continue;
+      if (this.day >= f.estrusStart && this.day < f.estrusStart + 3) now++;
+      else if (this.day < f.estrusStart) later++;
+    }
+    return { now, later };
+  }
+
+  /** 浜全体で、まだ発情を残している（いま発情中か、これから発情する）メスの数 */
+  estrusRemaining(): number {
+    let n = 0;
+    for (const f of this.living()) {
+      if (f.sex === 'F' && f.onBeach && f.estrusStart >= 0 && this.day < f.estrusStart + 3) n++;
+    }
+    return n;
   }
 
   /** 繁殖期中のメスの状態（主が迫るときの目安） */
@@ -1503,6 +1546,8 @@ export class World {
   private ambientThoughts(): void {
     for (const ind of this.living()) {
       if (!ind.onBeach || !this.rng.chance(ind.id === this.playerId ? 0.12 : 0.03)) continue;
+      // その日に出来事のつぶやきがあれば、それを上書きしない
+      if (ind.thought && ind.thought.year === this.year && ind.thought.day === this.day) continue;
       const age = this.age(ind);
       let key: ThoughtKey;
       if (age === 0) key = this.rng.chance(0.5) ? 'pupMilk' : 'pupIdle';
@@ -1670,6 +1715,8 @@ export class World {
     if (playerDied) this.closeHead();
     const milestones = this.founderId !== null ? this.checkMilestones() : [];
     this.year++;
+    // 次の繁殖期が始まるまでの出来事（跡継ぎ選びなど）は「春」として記録する
+    this.day = -1;
     return {
       milestones,
       deaths,
@@ -1748,6 +1795,11 @@ export class World {
       const age = this.age(ind);
       if (age >= 12) tags.push('old');
       else if (age <= 6) tags.push('young');
+      // 相手のオスとのホコの差
+      if (about && about.sex === 'M' && this.age(about) >= 4 && this.age(ind) >= 4) {
+        const r = this.perceivedHoko(ind, about) / Math.max(1, this.hoko(ind));
+        tags.push(r > 1.12 ? 'rivalBig' : r < 0.89 ? 'rivalSmall' : 'rivalEven');
+      }
     }
     return { tags, cm };
   }

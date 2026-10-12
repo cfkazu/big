@@ -14,7 +14,7 @@ export type ThoughtKey =
   | 'pupIdle' | 'pupMilk'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
   | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
-  | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup';
+  | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup' | 'withdrew';
 
 type Mood = Thought['mood'];
 
@@ -43,13 +43,19 @@ const T: Record<ThoughtKey, Entry> = {
   winFight: {
     mood: 'happy',
     brash: ['{other}を叩きのめした！ ホコだけじゃないんだよ！', '体で分からせてやった。'],
-    any: ['取っ組み合いで{other}に勝った。体じゅうが痛い。', '僅差の勝負だったが、勝った。'],
+    any: ['取っ組み合いで{other}に勝った。体じゅうが痛い。', '勝った。だが次はどうだか。'],
   },
   loseFight: {
     mood: 'sad',
     brash: ['くそっ、{other}め……次は負けん。'],
     timid: ['痛い……もう取っ組み合いはこりごりだ。'],
-    any: ['{other}に組み伏せられた。傷が疼く。', '大きさは互角だったのに……'],
+    any: ['{other}に組み伏せられた。傷が疼く。', '負けた。傷が癒えたら、また。'],
+  },
+  withdrew: {
+    mood: 'neutral',
+    brash: ['今日のところは見逃してやる。'],
+    timid: ['危なかった……引いて正解だ。'],
+    any: ['今日のところは引いておく。', '勝てない勝負はしない。それも強さだ。'],
   },
   takeHarem: {
     mood: 'happy',

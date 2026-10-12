@@ -6,9 +6,10 @@ import type { ThoughtKey } from './thoughts';
  *  fond / cold：メスの愛着が高い／低い
  *  hokoFan / gentleFan：メスの好みが、大きなホコ／穏やかなオス
  *  old / young：自分が年寄り／若い
+ *  rivalBig / rivalSmall / rivalEven：相手のオスのホコが自分よりはっきり大きい／小さい／ほぼ同じ
  * {cm} は話題のオスのホコの長さ、{other} は相手の名前、{I} は一人称。
  */
-export type Tag = 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young';
+export type Tag = 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young' | 'rivalBig' | 'rivalSmall' | 'rivalEven';
 
 export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>>> = {
   // ─── メスがホコの手入れをしたとき ───
@@ -124,9 +125,18 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   winFight: {
     small: ['ホコでは負けても、体では負けん！'],
+    rivalBig: ['ホコでは負けていたが、体で勝った！', 'あの大きさに怯まなかった{I}を褒めたい。'],
+    rivalSmall: ['大きさの差を見せつけたうえで、組み伏せた。'],
+    rivalEven: ['僅差の勝負だったが、勝った。'],
   },
   loseFight: {
     big: ['ホコは{I}のほうが大きいのに……'],
+    rivalBig: ['あれだけ大きさが違えば、組んでも無理だったか。', '{other}のホコに気圧された。'],
+    rivalSmall: ['ホコでは勝っていたのに、体で負けた……'],
+    rivalEven: ['大きさは互角だったのに……'],
+  },
+  withdrew: {
+    rivalBig: ['あの大きさとは、まだ組めない。', '{other}とは、もう少し体ができてからだ。'],
   },
   takeHarem: {
     big: ['この{cm}cmにふさわしい浜を手に入れた。'],
