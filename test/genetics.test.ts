@@ -132,3 +132,62 @@ describe('群れのシミュレーション', () => {
     }
   });
 });
+
+describe('主としての行動', () => {
+  function setupHolder() {
+    const w = World.create(21, 20);
+    const founder = w.founderCandidates()[0];
+    w.choosePlayer(founder.id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    // プレイヤーを主にする
+    const old = w.get(w.slotHolders[0]);
+    if (old) old.slot = null;
+    w.slotHolders[0] = p.id;
+    p.slot = 0;
+    p.sperm = 200;
+    const f = w.living().find((i) => i.sex === 'F' && w.age(i) >= 4)!;
+    f.slot = 0;
+    f.onBeach = true;
+    (w as unknown as { invalidateSlots(): void }).invalidateSlots();
+    return { w, p, f };
+  }
+
+  function runDay(w: World) {
+    const g = w.runDay();
+    let r = g.next();
+    while (!r.done) r = g.next('accept');
+  }
+
+  it('発情中のメスに迫ればつがえる', () => {
+    const { w, p, f } = setupHolder();
+    f.estrusStart = w.day;
+    f.loyalty = 1;
+    w.setPlayerStance({ kind: 'court', femaleId: f.id });
+    const before = p.season.matings;
+    runDay(w);
+    expect(f.spermStore.some((d) => d.maleId === p.id)).toBe(true);
+    expect(p.season.matings).toBeGreaterThan(before);
+    // 翌日は守りに戻る
+    expect(w.playerStance.kind === 'court').toBe(false);
+  });
+
+  it('発情していないメスには突っぱねられる', () => {
+    const { w, p, f } = setupHolder();
+    f.estrusStart = w.day + 10;
+    f.loyalty = 0.5;
+    w.setPlayerStance({ kind: 'court', femaleId: f.id });
+    runDay(w);
+    expect(f.spermStore.some((d) => d.maleId === p.id)).toBe(false);
+    expect(w.log.some((l) => l.text.includes('突っぱねられた'))).toBe(true);
+  });
+
+  it('慕っているメスはホコの手入れをしてくれる', () => {
+    const { w, p, f } = setupHolder();
+    f.loyalty = 1;
+    p.shine = 0;
+    w.setPlayerStance({ kind: 'groom', femaleId: f.id, type: 'hoko' });
+    runDay(w);
+    expect(p.shine).toBeGreaterThan(0.03);
+  });
+});

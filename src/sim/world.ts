@@ -26,7 +26,14 @@ export type Stance =
   | { kind: 'rest' }
   | { kind: 'roam' }
   | { kind: 'follow'; slot: number }
-  | { kind: 'infiltrate'; slot: number };
+  | { kind: 'infiltrate'; slot: number }
+  // 主だけが選べる：ハーレムのメスに自分から迫る／世話をさせる
+  | { kind: 'court'; femaleId: number }
+  | { kind: 'groom'; femaleId: number; type: GroomType };
+
+export type GroomType = 'hoko' | 'wound' | 'fur';
+
+export const GROOM_LABEL: Record<GroomType, string> = { hoko: 'ホコの手入れ', wound: '傷の手当て', fur: '毛づくろい' };
 
 export type ForageStrategy = 'cautious' | 'normal' | 'greedy';
 
@@ -379,7 +386,13 @@ export class World {
 
   /** 主が見張れるメスの数 */
   guardCap(holder: Individual): number {
-    const guarding = holder.id === this.playerId && this.playerStance.kind === 'guard' ? 1.3 : 1;
+    let guarding = 1;
+    if (holder.id === this.playerId) {
+      const k = this.playerStance.kind;
+      // 守りに徹すれば広く見張れる。一頭にかまけていると見張りが手薄になる。
+      if (k === 'guard') guarding = 1.3;
+      else if (k === 'court' || k === 'groom') guarding = 0.85;
+    }
     return Math.max(2, Math.round(3 + 13 * holder.condition * guarding * (0.7 + 0.3 * holder.base.vigor)));
   }
 
@@ -581,6 +594,10 @@ export class World {
       if (h) h.season.peakHarem = Math.max(h.season.peakHarem, this.slotFemales(s).length);
     }
     this.ambientThoughts();
+
+    // 一頭への働きかけはその日限り。翌日からは浜を守る。
+    const pk = this.playerStance.kind;
+    if ((pk === 'court' || pk === 'groom') && this.player) this.playerStance = this.defaultStance(this.player);
 
     this.day++;
   }
@@ -845,7 +862,104 @@ export class World {
     return attract - crowd - harass + company + stay + sats + this.rng.normal(0, 0.3);
   }
 
+  /** 繁殖期中のメスの状態（主が迫るときの目安） */
+  femaleStatus(f: Individual): { estrus: boolean; label: string } {
+    const es = f.estrusStart;
+    const pup = f.pupId != null && this.get(f.pupId)?.alive ? '・子育て中' : '';
+    if (es < 0) return { estrus: false, label: 'まだ若い' };
+    if (this.day >= es && this.day < es + 3) return { estrus: true, label: `発情中${pup}` };
+    if (this.day < es) {
+      const d = es - this.day;
+      return { estrus: false, label: `${d <= 2 ? 'もうすぐ発情' : `発情まであと${d}日ほど`}${pup}` };
+    }
+    const conceived = f.pregnancy && f.pregnancy.conceivedYear === this.year;
+    return { estrus: false, label: `${conceived ? '身ごもった' : '発情は終わった'}${pup}` };
+  }
+
+  /** プレイヤーが主として、ハーレムのメスに世話をさせる */
+  private playerOrderedGrooming(): void {
+    const p = this.player;
+    const st = this.playerStance;
+    if (!p || st.kind !== 'groom') return;
+    const s = this.slotOf(p);
+    const f = this.get(st.femaleId);
+    const what = GROOM_LABEL[st.type];
+    if (s === null || !f || !f.alive || !f.onBeach || f.slot !== s) {
+      this.pushLog(`${f?.name ?? 'そのメス'}はもうハーレムにいない。`, 'player', p.id);
+      return;
+    }
+    const pAccept = Math.min(0.97, 0.35 + 0.65 * f.loyalty + (f.base.boldness < 0.4 ? 0.1 : 0));
+    if (this.rng.chance(pAccept)) {
+      // 頼まれての世話は、ふだんの気まぐれな世話より念入り
+      if (st.type === 'wound') p.injury = Math.max(0, p.injury - 0.05);
+      else if (st.type === 'hoko') p.shine = Math.min(0.15, p.shine + 0.05);
+      else p.condition = Math.min(1, p.condition + 0.005);
+      f.loyalty = Math.min(1, f.loyalty + 0.03);
+      p.season.groomed++;
+      this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: p.id, type: st.type });
+      this.pushLog(`${f.name}に${what}をさせた。`, 'player', f.id);
+      this.think(p, st.type === 'hoko' ? 'groomedHoko' : st.type === 'wound' ? 'groomedWound' : 'groomedFur', { other: f.name });
+      this.think(f, 'fOrderedOk', { other: p.name }, 0.7);
+      return;
+    }
+    f.loyalty = Math.max(0, f.loyalty - 0.1);
+    this.pushLog(`${f.name}に${what}をさせようとしたが、そっぽを向かれた。`, 'player', f.id);
+    this.think(f, 'fOrderedNo', { other: p.name });
+    this.think(p, 'orderRefused', { other: f.name }, 0.7);
+    // 愛想を尽かしたメスは浜を出ていく
+    if (f.loyalty < 0.1 && this.rng.chance(0.35)) {
+      const others = this.slotHolders.map((_, i) => i).filter((i) => i !== s && this.slotHolders[i] != null);
+      if (others.length) {
+        const to = this.rng.pick(others);
+        f.slot = to;
+        f.loyalty = 0;
+        this.invalidateSlots();
+        this.dayEvents.push({ kind: 'move', femaleId: f.id, from: s, to });
+        this.pushLog(`${f.name}は愛想を尽かして、${this.get(this.slotHolders[to])!.name}の浜へ去った。`, 'player', f.id);
+      }
+    }
+  }
+
+  /** プレイヤーが主として、ハーレムのメスに自分から迫る。つがえたメスの ID を返す。 */
+  private playerCourt(): number | null {
+    const p = this.player;
+    const st = this.playerStance;
+    if (!p || st.kind !== 'court') return null;
+    const s = this.slotOf(p);
+    const f = this.get(st.femaleId);
+    if (s === null || !f || !f.alive || !f.onBeach || f.slot !== s) {
+      this.pushLog(`${f?.name ?? 'そのメス'}はもうハーレムにいない。`, 'player', p.id);
+      return null;
+    }
+    // 見せ合いだけなら構わないが、取っ組み合いのあとではそれどころではない
+    const brawled = this.dayEvents.some((e) => e.kind === 'fight' && (e.aId === p.id || e.bId === p.id));
+    if (brawled) {
+      this.pushLog(`取っ組み合いのあとで、${f.name}に構うどころではなかった。`, 'player', p.id);
+      return null;
+    }
+    if (!this.femaleStatus(f).estrus) {
+      f.loyalty = Math.max(0, f.loyalty - 0.04);
+      this.pushLog(`${f.name}に迫ったが、まだその時期ではないと突っぱねられた。`, 'player', f.id);
+      this.think(f, 'fCourtNotYet', { other: p.name });
+      this.think(p, 'courtRefused', { other: f.name }, 0.7);
+      return null;
+    }
+    if (p.sperm < 1) {
+      this.pushLog('精が尽きていて、つがえなかった。', 'player', p.id);
+      return null;
+    }
+    if (!this.rng.chance(0.75 + 0.25 * f.loyalty)) {
+      this.pushLog(`${f.name}に迫ったが、今日は気が乗らないらしい。`, 'player', f.id);
+      this.think(p, 'courtRefused', { other: f.name }, 0.7);
+      return null;
+    }
+    this.think(f, 'fCourtAccept', { other: p.name }, 0.6);
+    this.mate(p, f, 'holder');
+    return f.id;
+  }
+
   private groomingPhase(): void {
+    this.playerOrderedGrooming();
     for (let s = 0; s < this.slotHolders.length; s++) {
       const h = this.get(this.slotHolders[s]);
       if (!h) continue;
@@ -887,6 +1001,9 @@ export class World {
     );
     const satsBySlot = this.tacticBySlot('S');
     const sneakersBySlot = this.tacticBySlot('F');
+    const courted = this.playerCourt();
+    // プレイヤーが一頭にかまけている日は、ほかのメスに手が回りにくい
+    const busyCourting = this.playerStance.kind === 'court';
     for (const f of estrous) {
       if (this.day === f.estrusStart) this.think(f, 'fEstrus', {}, 0.25);
       const s = f.slot;
@@ -899,7 +1016,9 @@ export class World {
       let matings = 0;
 
       if (h && guarded) {
-        if (!h.foughtToday && h.sperm > 1 && this.rng.chance(0.65)) {
+        const pHolder = h.id === this.playerId && busyCourting ? 0.35 : 0.65;
+        if (f.id === courted) matings++;
+        else if (!h.foughtToday && h.sperm > 1 && this.rng.chance(pHolder)) {
           this.mate(h, f, 'holder');
           matings++;
         }

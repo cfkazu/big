@@ -654,6 +654,30 @@ h3::before {
   gap: 4px;
 }
 
+.groom-list {
+  display: grid;
+  gap: 6px;
+}
+
+.groom-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 2px 4px;
+  box-shadow: 0 2px 0 var(--slate);
+}
+
+.groom-row .who-col {
+  flex: 1;
+  min-width: 0;
+}
+
+.groom-btns {
+  display: flex;
+  gap: 4px;
+}
+
 .list .item {
   display: grid;
   grid-template-columns: 1fr auto auto;

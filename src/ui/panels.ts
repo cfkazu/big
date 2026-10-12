@@ -8,7 +8,7 @@ import {
   testisMass,
   type Individual,
 } from '../sim/individual';
-import { causeLabel, type LogKind, type World } from '../sim/world';
+import { GROOM_LABEL, causeLabel, type LogKind, type World } from '../sim/world';
 import { P } from '../render/palette';
 import { lineChart } from './chart';
 import { bar, btn, clear, h } from './dom';
@@ -29,6 +29,8 @@ export interface GameView {
   stanceRoam(): void;
   openChallenge(): void;
   openSlotPick(kind: 'follow' | 'infiltrate'): void;
+  openCourt(): void;
+  openGroomOrder(): void;
   fastForward(): void;
 }
 
@@ -118,9 +120,15 @@ function actions(g: GameView, p: Individual): HTMLElement {
         ? 'まだ挑むには若い。うろついて、隙をうかがおう。'
         : '主の座を狙うか、見張りの外のメスをうかがうか。';
     box.append(h('div', { class: 'hint' }, hintText));
+    if (holder) {
+      box.append(
+        btn('守る', () => g.stanceGuard(), on('guard')),
+        btn('つがう…', () => g.openCourt(), on('court')),
+        btn('手入れさせる…', () => g.openGroomOrder(), on('groom')),
+      );
+    }
     if (age >= 5) box.append(btn('挑む…', () => g.openChallenge(), on('challenge')));
-    if (holder) box.append(btn('守る', () => g.stanceGuard(), on('guard')));
-    else box.append(btn('うろつく', () => g.stanceRoam(), on('roam')));
+    if (!holder) box.append(btn('うろつく', () => g.stanceRoam(), on('roam')));
     box.append(btn('休む', () => g.stanceRest(), on('rest')));
   } else if (p.base.tactic === 'S') {
     const s = w.playerStance.kind === 'follow' ? w.playerStance.slot : null;
@@ -156,6 +164,14 @@ function planText(w: World): string {
     case 'rest': return '休む（痩せにくいが、交尾はしない）';
     case 'follow': return `${holderName(s.slot)}の浜に付き従い、隙を待つ`;
     case 'infiltrate': return `メスのふりをして${holderName(s.slot)}の浜に紛れ込む`;
+    case 'court': {
+      const f = w.get(s.femaleId);
+      return f ? `${f.name}に迫ってつがう（${w.femaleStatus(f).label}）` : 'つがう相手がいない';
+    }
+    case 'groom': {
+      const f = w.get(s.femaleId);
+      return f ? `${f.name}に${GROOM_LABEL[s.type]}をさせる` : '世話をさせる相手がいない';
+    }
   }
 }
 

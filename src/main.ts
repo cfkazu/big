@@ -9,6 +9,7 @@ import {
   type Answer,
   type ForageReport,
   type ForageStrategy,
+  type GroomType,
   type LogKind,
   type Prompt,
   type SeasonSummary,
@@ -289,6 +290,85 @@ class Game implements GameView {
       );
     });
     if (slot !== null) w.setPlayerStance(kind === 'follow' ? { kind: 'follow', slot } : { kind: 'infiltrate', slot });
+    this.refresh();
+  }
+
+  /** 主として、ハーレムのメスに迫る相手を選ぶ */
+  async openCourt(): Promise<void> {
+    const w = this.world;
+    const p = w.player;
+    const s = p ? w.slotOf(p) : null;
+    if (!p || s === null) return;
+    // 発情中 → 発情が近い順 → 発情の終わったメス
+    const soon = (f: Individual) => (w.femaleStatus(f).estrus ? -1 : f.estrusStart > w.day ? f.estrusStart - w.day : 999);
+    const females = [...w.slotFemales(s)].sort((a, b) => soon(a) - soon(b) || b.loyalty - a.loyalty);
+    const id = await ask<number | null>((done) => {
+      const list = h('div', { class: 'list' });
+      for (const f of females) {
+        const st = w.femaleStatus(f);
+        list.append(
+          h(
+            'button',
+            { class: `btn item ${st.estrus ? 'primary' : ''}`, onclick: () => done(f.id) },
+            h('span', null, f.name, h('span', { class: 'sub' }, ` ${w.age(f)}歳・愛着${Math.round(f.loyalty * 100)}%`)),
+            h('span', { class: 'sub' }, f.base.pref > 0.6 ? 'ホコ好き' : f.base.pref < 0.4 ? '穏やか好き' : ''),
+            h('span', null, st.label),
+          ),
+        );
+      }
+      if (females.length === 0) list.append(h('div', { class: 'sub' }, 'ハーレムにメスがいない。'));
+      return h(
+        'div',
+        null,
+        h('h2', null, '誰とつがう？'),
+        h('div', { class: 'sub' }, '受け入れてくれるのは発情中のメスだけ。発情していないメスに迫ると突っぱねられ、愛着が下がる。一頭にかまけている日は、ほかのメスへの見張りが手薄になる。'),
+        list,
+        h('div', { class: 'row' }, btn('やめる', () => done(null))),
+      );
+    });
+    if (id !== null) w.setPlayerStance({ kind: 'court', femaleId: id });
+    this.refresh();
+  }
+
+  /** 主として、ハーレムのメスに世話をさせる */
+  async openGroomOrder(): Promise<void> {
+    const w = this.world;
+    const p = w.player;
+    const s = p ? w.slotOf(p) : null;
+    if (!p || s === null) return;
+    const females = [...w.slotFemales(s)].sort((a, b) => b.loyalty - a.loyalty);
+    const pick = await ask<{ id: number; type: GroomType } | null>((done) => {
+      const list = h('div', { class: 'groom-list' });
+      for (const f of females) {
+        const mood = f.loyalty > 0.6 ? '慕っている' : f.loyalty > 0.3 ? 'なついている' : f.loyalty > 0.1 ? 'よそよそしい' : '不満げ';
+        list.append(
+          h(
+            'div',
+            { class: 'groom-row' },
+            h('div', { class: 'who-col' }, h('span', { class: 'name' }, f.name), h('span', { class: 'sub' }, ` 愛着${Math.round(f.loyalty * 100)}%・${mood}`)),
+            h(
+              'div',
+              { class: 'groom-btns' },
+              ...(['hoko', 'wound', 'fur'] as GroomType[]).map((t) => btn(t === 'hoko' ? 'ホコ' : t === 'wound' ? '傷' : '毛', () => done({ id: f.id, type: t }), 'small')),
+            ),
+          ),
+        );
+      }
+      if (females.length === 0) list.append(h('div', { class: 'sub' }, 'ハーレムにメスがいない。'));
+      return h(
+        'div',
+        null,
+        h('h2', null, '誰に世話をさせる？'),
+        h(
+          'div',
+          { class: 'sub' },
+          `ホコの手入れはツヤが出て見せ合いで有利に、傷の手当ては傷を癒やし、毛づくろいは少し体力が戻る。愛着の低いメスは嫌がり、断られると愛着が下がる。不満がたまったメスは浜を去ることもある。いまのケガ ${Math.round(p.injury * 100)}%・ツヤ +${Math.round(p.shine * 100)}%`,
+        ),
+        list,
+        h('div', { class: 'row' }, btn('やめる', () => done(null))),
+      );
+    });
+    if (pick) w.setPlayerStance({ kind: 'groom', femaleId: pick.id, type: pick.type });
     this.refresh();
   }
 

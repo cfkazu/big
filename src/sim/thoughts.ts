@@ -11,7 +11,8 @@ export type ThoughtKey =
   | 'fMoveCrowded' | 'fMoveAttracted' | 'fGroomHoko' | 'fGroomWound' | 'fGroomFur'
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
   | 'pupIdle' | 'pupMilk'
-  | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale';
+  | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
+  | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused';
 
 type Mood = Thought['mood'];
 
@@ -206,6 +207,35 @@ const T: Record<ThoughtKey, Entry> = {
   newHolderFemale: {
     mood: 'neutral',
     any: ['主が{other}に替わった。……まあ、いいけど。', '新しいボスは{other}か。様子を見よう。'],
+  },
+  fOrderedOk: {
+    mood: 'neutral',
+    brash: ['はいはい、ボス。ご命令とあらば。', 'しょうがないわね、今日だけよ。'],
+    any: ['ボスに呼ばれた。はいはい、ホコね。', 'ボスったら甘えん坊なんだから。', '{other}の世話も楽じゃないわ。'],
+  },
+  fOrderedNo: {
+    mood: 'angry',
+    any: ['今はそんな気分じゃないの。', '自分でやって。', '{other}、あたしを何だと思ってるの？', 'ほかの子に頼めば？'],
+  },
+  fCourtNotYet: {
+    mood: 'angry',
+    any: ['ちょっと、まだその時期じゃないでしょ！', '{other}、気が早すぎ。', '子育て中なの。あっち行って。'],
+  },
+  fCourtAccept: {
+    mood: 'love',
+    any: ['……ボスなら、いいわ。', '待ってたのよ、{other}。', 'あなたの子なら丈夫に育ちそう。'],
+  },
+  orderRefused: {
+    mood: 'sad',
+    brash: ['生意気な……主を誰だと思ってる。'],
+    timid: ['……ごめん。'],
+    any: ['{other}にそっぽを向かれた。', '主の威厳とは……'],
+  },
+  courtRefused: {
+    mood: 'sad',
+    brash: ['{other}め、つれないやつだ。'],
+    timid: ['また今度にしよう……'],
+    any: ['{other}に突っぱねられた。', '焦りすぎたか。'],
   },
   pupIdle: {
     mood: 'neutral',
