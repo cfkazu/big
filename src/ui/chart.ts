@@ -38,6 +38,12 @@ export function lineChart(series: Series[], opts: { w?: number; h?: number; min?
     let px: number | null = null;
     let py: number | null = null;
     s.values.forEach((v, i) => {
+      // 値の欠けた年は線を途切れさせる
+      if (!Number.isFinite(v)) {
+        px = null;
+        py = null;
+        return;
+      }
       const x = X(i);
       const y = Y(v);
       if (px !== null && py !== null) {

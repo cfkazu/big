@@ -12,6 +12,7 @@ import {
   testisMass,
   type DeathCause,
 } from './individual';
+import { geneticHoko, potentialStars, starText } from './lineage';
 import { randomName } from './names';
 import { Rng } from './rng';
 import { makeThought, type ThoughtKey } from './thoughts';
@@ -109,6 +110,9 @@ export interface YearStats {
   /** 血統占有率 */
   dynastyShare: number;
   dynastyCount: number;
+  /** 一族と群れ全体の、ホコの遺伝的な平均（cm） */
+  dynastyGeneticHoko: number;
+  herdGeneticHoko: number;
   /** その年の子のうち、主型・衛星型・忍び型の父をもつ割合 */
   paternityByTactic: { R: number; S: number; F: number };
 }
@@ -129,6 +133,8 @@ export interface ForageReport {
   playerDied: boolean;
   playerCause: DeathCause | null;
   conditionDelta: number;
+  /** この冬に超えた血統占有率の節目 */
+  milestones: number[];
 }
 
 export interface ChallengeTarget {
@@ -173,6 +179,12 @@ export class World {
   log: LogEntry[] = [];
   dayEvents: WorldEvent[] = [];
   history: YearStats[] = [];
+  /** 歴代当主 */
+  heads: HeadRecord[] = [];
+  /** 一族最高のホコの素質 */
+  bestHoko: { id: number; name: string; value: number; year: number } | null = null;
+  /** 達成した血統占有率の節目 */
+  milestonesReached: number[] = [];
   private birthsThisYear = 0;
   private slotCache: Map<number, Individual[]> | null = null;
   /** 主のとき、おまかせを選んでいるか */
@@ -294,6 +306,20 @@ export class World {
     } else {
       this.generation++;
     }
+    this.closeHead();
+    this.heads.push({
+      id: p.id,
+      name: p.name,
+      generation: this.generation,
+      fromYear: this.year,
+      toYear: null,
+      cause: null,
+      potential: p.base.hoko,
+      herdMean: this.herdHokoMean(),
+      peakHarem: 0,
+    });
+    if (asFounder) this.bestHoko = { id: p.id, name: p.name, value: p.base.hoko, year: this.year };
+    this.holderAuto = false;
     this.playerStance = this.defaultStance(p);
     this.pushLog(`${p.name}として生きる。`, 'player', p.id);
   }
@@ -324,6 +350,37 @@ export class World {
     }
     this.playerId = keepPlayer;
     return n;
+  }
+
+  /** 成熟した主型オスの、ホコの素質の平均 */
+  herdHokoMean(): number {
+    const last = this.history[this.history.length - 1];
+    if (last && last.hokoMean > 0) return last.hokoMean;
+    const ms = this.living().filter((m) => m.sex === 'M' && m.base.tactic === 'R' && this.age(m) >= 6);
+    return ms.length ? ms.reduce((s, m) => s + m.base.hoko, 0) / ms.length : 40;
+  }
+
+  /** いまの当主の記録を閉じる */
+  private closeHead(): void {
+    const h = this.heads[this.heads.length - 1];
+    if (!h || h.toYear !== null) return;
+    const ind = this.get(h.id);
+    if (ind && !ind.alive) {
+      h.toYear = ind.deathYear;
+      h.cause = ind.deathCause;
+    }
+  }
+
+  /** 血統占有率の節目。超えたものを返す。 */
+  checkMilestones(): number[] {
+    const living = this.living();
+    const share = living.reduce((s, i) => s + i.dynasty, 0) / Math.max(1, living.length);
+    const hit = MILESTONES.filter((m) => share >= m && !this.milestonesReached.includes(m));
+    for (const m of hit) {
+      this.milestonesReached.push(m);
+      this.pushLog(`節目：血統占有率が${Math.round(m * 100)}%を超えた！`, 'dynasty');
+    }
+    return hit;
   }
 
   defaultStance(p: Individual): Stance {
@@ -1268,10 +1325,21 @@ export class World {
     if (father) this.paternity[father.base.tactic]++;
     this.dayEvents.push({ kind: 'birth', motherId: f.id, pupId: pup.id });
     this.think(f, 'fGaveBirth', { other: pup.name }, 0.5);
+    // 子の素質（オスはホコの素質、メスは息子に伝わる遺伝的な値）
+    const potential = pup.sex === 'M' ? pup.base.hoko : geneticHoko(pup);
+    const stars = potentialStars(potential, this.herdHokoMean());
+    const label = `${pup.sex === 'M' ? 'オス' : 'メス'}・素質${starText(stars)}`;
     if (father && father.id === this.playerId) {
-      this.pushLog(`${f.name}が${this.playerId === father.id ? 'あなた' : father.name}の子「${pup.name}」（${pup.sex === 'M' ? 'オス' : 'メス'}）を産んだ。`, 'player', pup.id);
+      this.pushLog(`${f.name}があなたの子「${pup.name}」（${label}）を産んだ。`, 'player', pup.id);
     } else if (pup.dynasty > 0) {
-      this.pushLog(`一族の子「${pup.name}」が生まれた。`, 'dynasty', pup.id);
+      this.pushLog(`一族の子「${pup.name}」（${label}）が生まれた。`, 'dynasty', pup.id);
+    }
+    if (pup.dynasty > 0 && pup.sex === 'M' && pup.base.tactic === 'R') {
+      if (stars >= 5) this.think(f, 'fBigPup', { other: pup.name });
+      if (this.bestHoko && pup.base.hoko > this.bestHoko.value) {
+        this.bestHoko = { id: pup.id, name: pup.name, value: pup.base.hoko, year: this.year };
+        this.pushLog(`一族最高の素質！「${pup.name}」は育てばホコ${pup.base.hoko.toFixed(1)}cmになる。`, 'dynasty', pup.id);
+      }
     }
   }
 
@@ -1304,6 +1372,8 @@ export class World {
       }
     }
     this.recordStats();
+    const head = this.heads[this.heads.length - 1];
+    if (head && p && head.id === p.id) head.peakHarem = Math.max(head.peakHarem, p.season.peakHarem);
     const summary: SeasonSummary = {
       year: this.year,
       playerMatings: p?.season.matings ?? 0,
@@ -1434,8 +1504,11 @@ export class World {
       const h = this.get(this.slotHolders[s]);
       if (h && !h.alive) this.slotHolders[s] = null;
     }
+    if (playerDied) this.closeHead();
+    const milestones = this.founderId !== null ? this.checkMilestones() : [];
     this.year++;
     return {
+      milestones,
       deaths,
       playerDied,
       playerCause: playerDied ? p!.deathCause : null,
@@ -1534,6 +1607,8 @@ export class World {
       delLoadMean: mean(living.map((i) => i.base.delLoad)),
       dynastyShare: mean(living.map((i) => i.dynasty)),
       dynastyCount: living.filter((i) => i.dynasty > 0).length,
+      dynastyGeneticHoko: living.some((i) => i.dynasty > 0) ? mean(living.filter((i) => i.dynasty > 0).map(geneticHoko)) : NaN,
+      herdGeneticHoko: mean(living.map(geneticHoko)),
       paternityByTactic: {
         R: this.paternity.R / totalPat,
         S: this.paternity.S / totalPat,
@@ -1543,6 +1618,23 @@ export class World {
     if (this.history.length > 300) this.history.shift();
   }
 }
+
+export interface HeadRecord {
+  id: number;
+  name: string;
+  generation: number;
+  fromYear: number;
+  toYear: number | null;
+  cause: DeathCause | null;
+  /** 成熟時のホコの素質 */
+  potential: number;
+  /** 当主になったときの群れの平均 */
+  herdMean: number;
+  peakHarem: number;
+}
+
+/** 血統占有率の節目 */
+export const MILESTONES = [0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5];
 
 /** 採餌の方針ごとの、食べる量とシャチに遭う危険の倍率 */
 export const FORAGE: Record<ForageStrategy, { effort: number; orcaMul: number }> = {

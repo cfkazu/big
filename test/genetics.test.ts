@@ -17,6 +17,7 @@ import {
 } from '../src/sim/genetics';
 import { Rng } from '../src/sim/rng';
 import { World } from '../src/sim/world';
+import { bloodEstimate } from '../src/sim/lineage';
 
 function setAllele(g: Genome, locusId: string, which: 0 | 1, value: number) {
   const { chrom, idx } = LOCUS_INDEX[locusId];
@@ -235,5 +236,42 @@ describe('主としての行動', () => {
     w.setPlayerStance({ kind: 'rest' });
     runDay(w);
     expect(p.condition).toBeGreaterThan(0.3);
+  });
+});
+
+describe('世代の進歩', () => {
+  it('当主の記録が残り、代替わりで閉じる', () => {
+    const w = World.create(31, 20);
+    const a = w.founderCandidates()[0];
+    w.choosePlayer(a.id, true);
+    expect(w.heads).toHaveLength(1);
+    expect(w.heads[0].potential).toBeCloseTo(a.base.hoko);
+    // 初代が死んだことにして、別のオスを跡継ぎにする
+    a.alive = false;
+    a.deathYear = w.year;
+    a.deathCause = 'orca';
+    const b = w.living().find((i) => i.sex === 'M' && i.id !== a.id)!;
+    w.choosePlayer(b.id, false);
+    expect(w.heads).toHaveLength(2);
+    expect(w.heads[0].cause).toBe('orca');
+    expect(w.heads[1].generation).toBe(2);
+  });
+
+  it('血統占有率の節目は一度だけ記録される', () => {
+    const w = World.create(32, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    for (const i of w.living().slice(0, 30)) i.dynasty = 0.5;
+    const first = w.checkMilestones();
+    expect(first.length).toBeGreaterThan(0);
+    expect(w.checkMilestones()).toEqual([]);
+  });
+
+  it('メスの血筋は父と兄弟から見立てる', () => {
+    const w = World.create(33, 30);
+    const f = w.living().find((i) => i.sex === 'F' && i.fatherId != null && w.get(i.fatherId))!;
+    const est = bloodEstimate(f, (id) => w.get(id), w.inds.values())!;
+    expect(est.clues[0]).toContain('父');
+    expect(est.value).toBeGreaterThan(15);
+    expect(est.value).toBeLessThan(70);
   });
 });

@@ -13,7 +13,7 @@ export type ThoughtKey =
   | 'pupIdle' | 'pupMilk'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
   | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
-  | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone';
+  | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup';
 
 type Mood = Thought['mood'];
 
@@ -259,6 +259,10 @@ const T: Record<ThoughtKey, Entry> = {
   sootheDone: {
     mood: 'neutral',
     any: ['みんな落ち着いたようだ。', 'ここは安全だと伝わっただろうか。'],
+  },
+  fBigPup: {
+    mood: 'love',
+    any: ['この子は大物になる。わかるの。', '{other}、なんて立派な体つき。', 'この子、父親に似てたくましい。'],
   },
   pupIdle: {
     mood: 'neutral',

@@ -543,6 +543,36 @@ details.genome[open] summary::before {
 .del-row i.het { background: var(--orange); }
 .del-row i.hom { background: var(--red); }
 
+.stars {
+  color: var(--gold0);
+  letter-spacing: 1px;
+}
+
+.up {
+  color: var(--green);
+}
+
+.down {
+  color: var(--red);
+}
+
+.heads {
+  display: grid;
+  gap: 4px;
+}
+
+.heads .item > span {
+  display: block;
+}
+
+.heads .item {
+  grid-template-columns: 1fr;
+  gap: 0;
+  white-space: normal;
+  text-align: left;
+  min-width: 0;
+}
+
 h3 {
   margin: 6px 0 2px;
   font-size: 16px;

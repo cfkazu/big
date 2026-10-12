@@ -8,7 +8,8 @@ import {
   testisMass,
   type Individual,
 } from '../sim/individual';
-import { BREED_DAYS, GROOM_LABEL, causeLabel, type LogKind, type World } from '../sim/world';
+import { bloodEstimate, hokoPotential, potentialStars, starText } from '../sim/lineage';
+import { BREED_DAYS, GROOM_LABEL, MILESTONES, causeLabel, type LogKind, type World } from '../sim/world';
 import { P } from '../render/palette';
 import { lineChart } from './chart';
 import { bar, btn, clear, h } from './dom';
@@ -236,10 +237,12 @@ export function inspector(g: GameView, ind: Individual): HTMLElement {
   rows.push(stat('体重', h('span'), `${Math.round(bodyMass(ind, y))}kg`));
   if (ind.sex === 'M') {
     rows.push(stat('ホコ', bar(hokoDisplay(ind, y) / 70, 'hoko'), `${hokoDisplay(ind, y).toFixed(1)}cm`));
+    rows.push(stat('　素質', h('span', { class: 'stars' }, starText(potentialStars(ind.base.hoko, w.herdHokoMean()))), `${ind.base.hoko.toFixed(1)}cm`));
     rows.push(stat('精巣', h('span'), `${Math.round(testisMass(ind, y))}g`));
     rows.push(stat('生涯交尾', h('span'), `${ind.lifetime.matings}回`));
   } else {
     rows.push(stat('好み', bar(ind.base.pref, 'hoko'), ind.base.pref > 0.6 ? 'ホコ重視' : ind.base.pref < 0.4 ? '穏やか好き' : 'ふつう'));
+    rows.push(bloodRow(w, ind));
     if (ind.alive && ind.slot !== null) rows.push(stat('愛着', bar(ind.loyalty, 'love'), pct(ind.loyalty)));
   }
   rows.push(stat('気性', h('span', { class: 'sub' }, `攻${Math.round(ind.base.aggression * 9)} 胆${Math.round(ind.base.boldness * 9)}`), temperLabel(ind)));
@@ -250,6 +253,18 @@ export function inspector(g: GameView, ind: Individual): HTMLElement {
       ? h('div', { class: 'actions' }, btn('この子に構う…', () => g.openAttend(ind.id), 'primary'))
       : null;
   return h('div', null, head, thought, attend, h('div', null, ...rows), genomeView(ind));
+}
+
+/** メスの血筋の見立て（父と兄弟のホコから、息子に伝わる素質を推す） */
+export function bloodRow(w: World, f: Individual): HTMLElement {
+  const est = bloodEstimate(f, (id) => w.get(id), w.inds.values());
+  if (!est) return stat('血筋', h('span', { class: 'sub' }, '父も兄弟も知れない'), '不明');
+  return h(
+    'div',
+    null,
+    stat('血筋', h('span', { class: 'stars' }, starText(potentialStars(est.value, w.herdHokoMean()))), `約${est.value.toFixed(0)}cm`),
+    h('div', { class: 'sub', style: 'text-align:right' }, `${est.clues.join('・')}のホコから見立てた`),
+  );
 }
 
 function temperLabel(ind: Individual): string {
@@ -377,12 +392,15 @@ function herdView(g: GameView): HTMLElement {
 function dynastyView(g: GameView): HTMLElement {
   const w = g.world;
   const founder = w.get(w.founderId);
-  const hist = w.history.filter((x) => x.dynastyShare > 0 || x.dynastyCount > 0).slice(-60);
+  const hist = w.history.filter((x) => x.year >= w.startYear).slice(-60);
   const members = w
     .living()
     .filter((i) => i.dynasty > 0)
     .sort((a, b) => b.dynasty - a.dynasty || w.age(b) - w.age(a));
   const share = members.reduce((s, i) => s + i.dynasty, 0) / Math.max(1, w.living().length);
+  const next = MILESTONES.find((m) => !w.milestonesReached.includes(m));
+  const prev = [...MILESTONES].reverse().find((m) => w.milestonesReached.includes(m)) ?? 0;
+  const legend = (items: [string, string][]) => h('div', { class: 'legend sub' }, ...items.map(([c, t]) => h('span', null, h('i', { style: `background:${c}` }), t)));
   const box = h(
     'div',
     null,
@@ -392,19 +410,60 @@ function dynastyView(g: GameView): HTMLElement {
       h('tr', null, h('td', null, '初代'), h('td', { class: 'r' }, founder ? nameLink(g, founder) : '―'), h('td', null, '当主'), h('td', { class: 'r' }, ordinal(w.generation))),
       h('tr', null, h('td', null, '血統占有率'), h('td', { class: 'r' }, `${(share * 100).toFixed(1)}%`), h('td', null, '一族'), h('td', { class: 'r' }, `${members.length}頭`)),
     ),
+    next
+      ? h(
+          'div',
+          { class: 'stat' },
+          h('span', { class: 'k' }, `次の節目`),
+          bar((share - prev) / (next - prev), 'love'),
+          h('span', { class: 'v' }, `${Math.round(next * 100)}%`),
+        )
+      : h('div', { class: 'name' }, 'すべての節目を超えた。この浜はあなたの一族のものだ。'),
     h('h3', null, '血統占有率の推移'),
     lineChart([{ values: hist.map((x) => x.dynastyShare), color: P.pink1 }], { min: 0 }),
-    h('div', { class: 'sub' }, '群れ全体のゲノムのうち、初代から受け継がれた割合の期待値。'),
-    h('h3', null, '生きている一族'),
+    h('div', { class: 'sub' }, '群れ全体のゲノムのうち、初代から受け継がれた割合の期待値。節目は 1・2・5・10・20・30・50%。'),
+    h('h3', null, 'ホコの遺伝的な平均'),
+    lineChart([
+      { values: hist.map((x) => x.herdGeneticHoko), color: P.gray1 },
+      { values: hist.map((x) => x.dynastyGeneticHoko), color: P.gold0 },
+    ]),
+    legend([[P.gold0, '一族'], [P.gray1, '群れ']]),
+    h('div', { class: 'sub' }, 'オスもメスも、主型のオスとして育ったときの長さに直した値。一族が群れの上を行けば、選んだ血が効いている。'),
   );
+  if (w.bestHoko) {
+    const b = w.bestHoko;
+    box.append(h('div', { class: 'sub', style: 'margin-top:4px' }, '一族最高の素質：', nameLink(g, w.get(b.id)), ` ${b.value.toFixed(1)}cm（${w.displayYear(b.year)}年目）`));
+  }
+  // 歴代当主
+  box.append(h('h3', null, '歴代当主'));
+  const heads = h('div', { class: 'heads' });
+  w.heads.forEach((hd, i) => {
+    const ind = w.get(hd.id);
+    const prevHd = w.heads[i - 1];
+    const diff = prevHd ? hd.potential - prevHd.potential : 0;
+    const vsHerd = hd.potential - hd.herdMean;
+    const span = `${w.displayYear(hd.fromYear)}〜${hd.toYear !== null ? `${w.displayYear(hd.toYear)}年目` : ''}`;
+    heads.append(
+      h(
+        'button',
+        { class: `btn small item head ${hd.id === w.playerId ? 'on' : ''}`, onclick: () => g.select(hd.id) },
+        h('span', null, h('span', { class: 'sub' }, `${ordinal(hd.generation)} `), hd.name, h('span', { class: 'sub' }, ` ${span}`)),
+        h('span', { class: 'sub' }, `ハーレム最大${hd.peakHarem}・子${ind?.childIds.length ?? 0}${hd.cause ? `・${causeLabel(hd.cause)}` : ''}`),
+        h('span', null, `${hd.potential.toFixed(1)}cm`, h('span', { class: diff > 0 ? 'up' : diff < 0 ? 'down' : 'sub' }, i > 0 ? ` ${diff >= 0 ? '+' : ''}${diff.toFixed(1)}` : ''), h('span', { class: 'sub' }, `（群れ比${vsHerd >= 0 ? '+' : ''}${vsHerd.toFixed(1)}）`)),
+      ),
+    );
+  });
+  box.append(heads, h('div', { class: 'sub' }, '数字はホコの素質。＋−は先代との差、群れ比は当主になったときの群れの平均との差。'));
+  box.append(h('h3', null, '生きている一族'));
   const list = h('div', { class: 'list' });
+  const mean = w.herdHokoMean();
   for (const m of members.slice(0, 40)) {
     list.append(
       h(
         'button',
         { class: 'btn small item', onclick: () => g.select(m.id) },
         h('span', null, m.id === w.playerId ? '★' : '', m.name, h('span', { class: 'sub' }, ` ${sexLabel(m)} ${w.age(m)}歳`)),
-        h('span', { class: 'sub' }, m.sex === 'M' ? tacticLabel(m.base.tactic) : ''),
+        h('span', { class: 'sub' }, starText(potentialStars(hokoPotential(m), mean))),
         h('span', null, pct(m.dynasty)),
       ),
     );

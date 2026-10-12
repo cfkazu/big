@@ -20,6 +20,7 @@ import { installFrames } from './ui/frame';
 import { ask, isModalOpen } from './ui/modal';
 import { renderLog, renderSide, type GameView, type Tab } from './ui/panels';
 import { portrait } from './ui/portrait';
+import { bloodEstimate, potentialStars, starText } from './sim/lineage';
 
 type Mode = 'title' | 'loading' | 'season' | 'between' | 'over';
 
@@ -379,7 +380,7 @@ class Game implements GameView {
           h(
             'button',
             { class: `btn item ${st.estrus ? 'primary' : ''}`, onclick: () => done(f.id) },
-            h('span', null, f.name, h('span', { class: 'sub' }, ` ${w.age(f)}歳・${moodLabel(f.loyalty)}`)),
+            h('span', null, f.name, h('span', { class: 'sub' }, ` ${w.age(f)}歳・${moodLabel(f.loyalty)}`), ' ', h('span', { class: 'stars' }, bloodStars(w, f))),
             h('span', { class: 'sub' }, f.base.pref > 0.6 ? 'ホコ好き' : f.base.pref < 0.4 ? '穏やか好き' : ''),
             h('span', null, st.label),
           ),
@@ -427,7 +428,20 @@ class Game implements GameView {
           bar(f.loyalty, 'love'),
           h('span', { class: 'v' }, moodLabel(f.loyalty)),
         ),
-        h('div', { class: 'sub', style: 'margin-bottom:6px' }, `好み：${f.base.pref > 0.6 ? '大きなホコ' : f.base.pref < 0.4 ? '穏やかなオス' : 'こだわらない'}${pup?.alive ? `・子の${pup.name}を育てている` : ''}`),
+        h('div', { class: 'sub' }, `好み：${f.base.pref > 0.6 ? '大きなホコ' : f.base.pref < 0.4 ? '穏やかなオス' : 'こだわらない'}${pup?.alive ? `・子の${pup.name}を育てている` : ''}`),
+        (() => {
+          const est = bloodEstimate(f, (id) => w.get(id), w.inds.values());
+          if (!est) return h('div', { class: 'sub', style: 'margin-bottom:6px' }, '血筋：父も兄弟も知れない。');
+          const son = (p.base.hoko + est.value) / 2;
+          return h(
+            'div',
+            { style: 'margin-bottom:6px' },
+            h('span', { class: 'sub' }, '血筋 '),
+            h('span', { class: 'stars' }, starText(potentialStars(est.value, w.herdHokoMean()))),
+            h('span', { class: 'sub' }, `（${est.clues.join('・')}から）　`),
+            `あなたとの息子の見込み：ホコ 約${son.toFixed(0)}cm`,
+          );
+        })(),
         h(
           'div',
           { class: 'choices' },
@@ -647,7 +661,7 @@ class Game implements GameView {
     await this.showIntro();
   }
 
-  private candidateButton(c: Individual, onclick: () => void, extra?: string): HTMLElement {
+  private candidateButton(c: Individual, onclick: () => void, extra?: string, compareTo?: Individual): HTMLElement {
     const w = this.world;
     const y = w.year;
     const temper = c.base.aggression > 0.62 ? '短気' : c.base.aggression < 0.38 ? '温厚' : '並の気性';
@@ -664,9 +678,14 @@ class Game implements GameView {
         h('div', null, h('span', { class: 'name' }, c.name), ` ${w.age(c)}歳 `, h('span', { class: `tag ${c.base.tactic}` }, tacticLabel(c.base.tactic)), extra ? h('span', { class: 'tag gold' }, extra) : null),
         h(
           'div',
-          { class: 'sub' },
-          `成熟時ホコ ${c.base.hoko.toFixed(1)}cm・精巣 ${Math.round(c.base.testis)}g・体重 ${Math.round(c.base.body)}kg`,
+          null,
+          h('span', { class: 'stars' }, starText(potentialStars(c.base.hoko, w.herdHokoMean()))),
+          ` ホコの素質 ${c.base.hoko.toFixed(1)}cm`,
+          compareTo
+            ? h('span', { class: c.base.hoko >= compareTo.base.hoko ? 'up' : 'down' }, `（先代より${c.base.hoko >= compareTo.base.hoko ? '+' : ''}${(c.base.hoko - compareTo.base.hoko).toFixed(1)}）`)
+            : null,
         ),
+        h('div', { class: 'sub' }, `精巣 ${Math.round(c.base.testis)}g・体重 ${Math.round(c.base.body)}kg（成熟時）`),
         h('div', { class: 'sub' }, `${temper}${bold ? '・' + bold : ''}・活力 ${Math.round(c.base.vigor * 100)}%　母 ${mother?.name ?? '不明'}／父 ${father?.name ?? '不明'}`),
         h('div', { class: 'sub' }, `いまのホコ ${hokoDisplay(c, y).toFixed(1)}cm・精巣 ${Math.round(testisMass(c, y))}g・体重 ${Math.round(bodyMass(c, y))}kg`),
       ),
@@ -846,6 +865,7 @@ class Game implements GameView {
         notable.length ? h('h3', null, '一族の訃報') : null,
         ...notable.filter((d) => d.id !== w.playerId).slice(0, 8).map((d) => h('div', { class: 'sub' }, `${d.name}（${d.age}歳）…${causeLabel(d.cause)}`)),
         pupDeaths ? h('div', { class: 'sub' }, `一族の子${pupDeaths}頭が冬を越せなかった。`) : null,
+        ...rep.milestones.map((m) => h('div', { class: 'name', style: 'color:#fee761' }, `節目：血統占有率が${Math.round(m * 100)}%を超えた！`)),
         p && p.thought && !rep.playerDied ? h('div', { class: 'thought' }, `「${p.thought.text}」`) : null,
         h('div', { class: 'row' }, btn(rep.playerDied ? '跡継ぎを選ぶ' : '次の繁殖期へ', () => done(), 'primary')),
       ),
@@ -886,9 +906,15 @@ class Game implements GameView {
       const box = h('div', { class: 'choices' });
       for (const c of cands.slice(0, 6)) {
         const rel = c.fatherId === prev?.id ? '息子' : c.motherId && w.get(c.motherId)?.fatherId === prev?.id ? '娘の子' : '一族';
-        box.append(this.candidateButton(c, () => done(c.id), rel));
+        box.append(this.candidateButton(c, () => done(c.id), rel, prev));
       }
-      return h('div', null, h('h2', null, '跡継ぎを選ぶ'), h('div', { class: 'sub' }, `${prev?.name ?? '当主'}の血を引くオスたち。血の濃い順。`), box);
+      return h(
+        'div',
+        null,
+        h('h2', null, '跡継ぎを選ぶ'),
+        h('div', { class: 'sub' }, `${prev?.name ?? '当主'}の血を引くオスたち。血の濃い順。星はホコの素質を群れの平均と比べたもの（★★★が平均）。素質の高い子を継がせるほど、一族は代を重ねて大きくなる。`),
+        box,
+      );
     });
     w.choosePlayer(id, false);
     this.select(id);
@@ -918,6 +944,11 @@ class Game implements GameView {
     );
     location.reload();
   }
+}
+
+function bloodStars(w: World, f: Individual): string {
+  const est = bloodEstimate(f, (id) => w.get(id), w.inds.values());
+  return est ? `血筋${starText(potentialStars(est.value, w.herdHokoMean()))}` : '';
 }
 
 function moodLabel(loyalty: number): string {
