@@ -106,6 +106,7 @@ class Game implements GameView {
       }
       this.scene.applyDay(w.dayEvents, this.dayMs());
       this.refresh();
+      this.toastResult();
       if (w.day >= BREED_DAYS) {
         this.playing = false;
         await this.endSeason();
@@ -114,6 +115,32 @@ class Game implements GameView {
       this.stepping = false;
     }
   }
+
+  /** その日のプレイヤーの勝負の結果を浜の上に出す */
+  private toastResult(): void {
+    const w = this.world;
+    const pid = w.playerId;
+    const msgs: { text: string; win: boolean }[] = [];
+    for (const e of w.dayEvents) {
+      if ((e.kind === 'display' || e.kind === 'fight') && (e.aId === pid || e.bId === pid)) {
+        const win = e.winnerId === pid;
+        const opp = w.get(e.aId === pid ? e.bId : e.aId)?.name ?? '相手';
+        const how = e.kind === 'display' ? '見せ合い' : '取っ組み合い';
+        msgs.push({ text: `${how}で${opp}に${win ? '勝った！' : '負けた……'}`, win });
+      }
+      if (e.kind === 'takeover' && e.newId === pid) msgs.push({ text: '浜とハーレムを手に入れた！', win: true });
+      if (e.kind === 'takeover' && e.oldId === pid) msgs.push({ text: '浜とハーレムを失った……', win: false });
+    }
+    if (msgs.length === 0) return;
+    const p = w.player;
+    const el = $('toast');
+    el.textContent = msgs.map((m) => m.text).join('　') + (p && p.injury > 0.05 ? `（ケガ ${Math.round(p.injury * 100)}%）` : '');
+    el.className = `show ${msgs[msgs.length - 1].win ? 'win' : 'lose'}`;
+    clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => (el.className = ''), 3200);
+  }
+
+  private toastTimer = 0;
 
   // ───────────────────────── 季節の切り替え ─────────────────────────
 
@@ -212,6 +239,11 @@ class Game implements GameView {
     this.refresh();
   }
 
+  stanceAuto(): void {
+    this.world.setPlayerStance({ kind: 'auto' });
+    this.refresh();
+  }
+
   stanceRest(): void {
     this.world.setPlayerStance({ kind: 'rest' });
     this.refresh();
@@ -233,12 +265,15 @@ class Game implements GameView {
       for (const t of targets) {
         const m = w.get(t.id)!;
         const ratio = t.perceived / myHoko;
-        const verdict = ratio > 1.12 ? '分が悪い' : ratio > 1.03 ? '互角かやや上' : ratio > 0.95 ? '互角' : '勝てそう';
+        // 差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合い（体重・体力・主の粘り）で決まる
+        const odds = w.fightOdds(p, m, false, t.isHolder);
+        const verdict =
+          ratio > 1.12 ? '見せ合いで負けそう' : ratio < 0.9 ? '見せ合いで勝てそう' : odds > 0.6 ? '組めば勝てそう' : odds < 0.4 ? '組めば不利' : '五分';
         list.append(
           h(
             'button',
             { class: 'btn item', onclick: () => done(t.id) },
-            h('span', null, t.isHolder ? '♛ ' : '', m.name, h('span', { class: 'sub' }, ` ${w.age(m)}歳 ${t.isHolder ? `ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`)),
+            h('span', null, t.isHolder ? '♛ ' : '', m.name, h('span', { class: 'sub' }, ` ${w.age(m)}歳・${Math.round(bodyMass(m, w.year))}kg${t.isHolder ? `・ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`)),
             h('span', { class: 'sub' }, verdict),
             h('span', null, `推定${t.perceived.toFixed(1)}cm`),
           ),
@@ -250,7 +285,7 @@ class Game implements GameView {
         null,
         h('h2', null, '誰に挑む？'),
         h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm。相手の大きさは見た目の推定で、多少の見誤りがある。主に勝てば、その浜とハーレムを奪える。ただし浜の主は守りに入ると手強い。`),
-        h('div', { class: 'sub' }, '挑めるのは 1 日 1 回。選んだ相手とは、次に日を進めたときに勝負になる。'),
+        h('div', { class: 'sub' }, `あなたの体重 ${Math.round(bodyMass(p, w.year))}kg・体力 ${Math.round(p.condition * 100)}%。ホコの差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合いになって体重と体力がものを言う。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。`),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );
@@ -463,7 +498,7 @@ class Game implements GameView {
       tip.style.display = 'block';
       const r = this.canvas.getBoundingClientRect();
       const left = e.clientX - r.left + 14;
-      tip.style.left = `${Math.min(left, r.width - tip.offsetWidth - 4)}px`;
+      tip.style.left = `${Math.max(4, Math.min(left, r.width - tip.offsetWidth - 4))}px`;
       tip.style.top = `${e.clientY - r.top + 14}px`;
     });
     this.canvas.addEventListener('mouseleave', () => {
@@ -503,7 +538,7 @@ class Game implements GameView {
     const w = this.world;
     const prog = w.phase === 'breeding' ? w.day / BREED_DAYS : 1;
     top.append(
-      h('div', { class: 'date' }, `${w.displayYear()}年目・${w.phase === 'breeding' ? `繁殖期 ${Math.min(w.day + 1, BREED_DAYS)}日目` : '採餌期'}`),
+      h('div', { class: 'date' }, `${w.displayYear()}年目・${w.phase === 'breeding' ? `繁殖期 ${w.day}/${BREED_DAYS}日` : '採餌期'}`),
       h('div', { class: 'season-bar' }, h('i', { style: `width:${(prog * 100).toFixed(1)}%` })),
       h('div', { class: 'spacer' }),
     );
@@ -651,32 +686,64 @@ class Game implements GameView {
           : p.base.tactic === 'S'
             ? '衛星型のあなたは、白い襟巻きをまとい、主のそばで隙を待つ。'
             : '忍び型のあなたは、メスに似た姿でハーレムに紛れ込む。'),
-        h('div', { style: 'margin-top:6px' }, '時間は止まっている。浜のすぐ下の「▶ 自動で進める」で日が流れ、「次の日へ」で 1 日ずつ進む。方針（挑む・守るなど）は日が進む前にいつでも選べる。挑まれたときはその場で判断を求められる。'),
+        h('div', { style: 'margin-top:6px' }, '時間は止まっている。まず右の欄で今日の方針を選び（迷ったら「うろつく」）、浜のすぐ下の「次の日へ」か「▶ 自動で進める」で日を進めよう。挑まれたときはその場で判断を求められる。'),
+        h('div', { style: 'margin-top:6px' }, '自分より小さいホコの主を見つけたら「挑む…」。浜を奪えばハーレムの主だ。くわしくは右上の「遊び方」。'),
         h('div', { class: 'row' }, btn('浜へ', () => done(), 'primary')),
       ),
     );
   }
 
   private async showHelp(): Promise<void> {
+    const sec = (title: string, ...lines: string[]) => [h('h3', null, title), ...lines.map((t) => h('div', { style: 'margin-bottom:4px' }, t))];
     await ask<void>((done) =>
       h(
         'div',
         null,
         h('h2', null, '遊び方'),
-        h('h3', null, '目的'),
-        h('div', null, '自分の血を群れに広げること。当主が死んだら、その血を引くオスに引き継いで続ける。「血統」の欄で、群れのゲノムのうち初代から受け継がれた割合が見られる。'),
-        h('h3', null, '序列'),
-        h('div', null, 'オス同士はまずホコを見せ合う。差がはっきりしていれば小さい方が引く。僅差なら取っ組み合いになり、体格・体力・気性で決まる。'),
-        h('h3', null, 'ハーレム'),
-        h('div', null, '主が見張れるメスの数は体力で決まる。過密になったり、喧嘩で騒がしくなったりすると、メスは他の浜へ移る。ハーレムのメスは主の毛づくろい、傷の手当て、ホコの手入れをしてくれる。'),
-        h('h3', null, '精子競争'),
-        h('div', null, '交尾のたびに貯精が減り、精巣の大きさに応じて毎日補われる。メスは発情中に複数のオスとつがうことがあり、子の父は生き残った精子の数に比例したくじ引きで決まる。'),
-        h('h3', null, '遺伝'),
-        h('div', null, 'ホコ・精巣・体格・気性・メスの好みは複数の遺伝子の足し算。ホコの遺伝子はメスも持っていて息子に渡す。Y染色体のホコ遺伝子は父から息子へだけ伝わる。戦略は一つのスーパージーンで決まり、衛星型と忍び型の遺伝子は二本そろうと胚が育たない。近親交配では有害な劣性遺伝子がそろいやすい。'),
-        h('h3', null, '採餌期'),
-        h('div', null, '繁殖期のあとは海で食べて体力を戻す。欲張るほど太れるが、シャチに狙われやすい。ホコが大きいほど泳ぎが遅く、狙われやすい。'),
-        h('h3', null, '操作'),
-        h('div', null, '浜の下の「▶ 自動で進める」で時間が流れ、「次の日へ」で 1 日ずつ進む。キーボードでは、スペースで進める／止める、Enter で 1 日進める。浜の個体をクリックすると詳しく見られる。'),
+        ...sec('目的', '自分の血を群れに広げること。当主が死んだら、その血を引くオスに引き継いで続ける。「血統」の欄の血統占有率は、群れのゲノムのうち初代から受け継がれた割合。'),
+        ...sec(
+          '一年の流れ',
+          '繁殖期（40日）：オスたちが浜で序列を争い、メスを囲う。時間は止まっていて、浜の下の「▶ 自動で進める」で日が流れ、「次の日へ」で1日ずつ進む。',
+          '採餌期：繁殖期が終わると海で一年を過ごす。慎重・ふつう・貪欲から方針を選ぶ。冬のあいだに死ぬ者も出る。',
+        ),
+        ...sec(
+          '毎日の方針（右の欄）',
+          '選んだ方針は「今日の予定」に出て、日を進めたときに実行される。「守る」「おまかせ」「うろつく」「海で食べる」は変えるまで毎日続く。「挑む」と「メスに構う」はその日限りで、翌日は元の方針に戻る。',
+          '挑む…：ほかのオスに勝負を挑む（5歳から）。浜の主に勝てば、その浜とハーレムを奪える。',
+          'うろつく：見張りの外にいるメスをうかがう。主でなくても交尾の機会がある。',
+          '海で食べる：浜を離れて食べ、体力を取り戻す。主がこれを選ぶと、その日はほとんど見張れない。',
+          '守る（主のみ）：見張れるメスが1.3倍に増え、取っ組み合いでも粘る。',
+          'おまかせ（主のみ）：毎朝ハーレムの様子を見て、守る・なだめる・機嫌の悪いメスに構う・見張りの外の発情メスに寄り添う、を自動で選ぶ。',
+          'メスに構う…（主のみ）：ハーレム全体をなだめる、一頭とつがう・毛づくろいしてあげる・寄り添って守る・世話（ホコの手入れ／傷の手当て／毛づくろい）をさせる。',
+        ),
+        ...sec(
+          '序列と勝負',
+          'オス同士はまずホコを見せ合う。差がはっきりしていれば小さい方が引く。僅差なら取っ組み合いになり、体重・体力・気性で決まる。浜の主は守りに入ると手強い（先住効果）。',
+          '挑まれたら「受けて立つ」か「引く」を選ぶ。引けばケガはしないが負けで、主なら浜を明け渡す。上の「判断」を「気質任せ」にすると、勝負の判断を自分の気性に任せて止まらずに進む。',
+          '「序列」は見せ合いと取っ組み合いの戦績から決まる順位。勝つと上がり、負けると下がる。',
+        ),
+        ...sec(
+          'ホコの大きさ',
+          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの太り具合が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。ハーレムのメスにホコの手入れをしてもらうとツヤが出て、その分だけ大きく見える。12歳を過ぎると少しずつ縮む。',
+        ),
+        ...sec(
+          'ハーレム',
+          'メスは浜に着くたびに、どの主のもとにいるかを選び直す。主の魅力（ホコの大きさ、または穏やかさ。好みはメスによる）と浜の居心地で決まる。',
+          '主が見張れるメスの数は体力で決まる。見張りを超えて混み合うとメスは窮屈で出ていき、見張りの外のメスはほかのオスとつがってしまう。浜で喧嘩が起きると騒がしくなり、子が踏まれることもあって、メスが去っていく。',
+          '主は繁殖期のあいだ食べずに浜を守るので、日に日に痩せる。体力が10%を切ると浜にいられなくなる。',
+        ),
+        ...sec(
+          '戦略の型',
+          '主型：ホコを見せ合って序列を争い、ハーレムを持つ。',
+          '衛星型：白いたてがみを持つ。主のそばに付き従い、主が喧嘩している隙にメスとつがう。',
+          '忍び型：メスに似た小さな姿。ハーレムに紛れ込んでつがうが、見つかると追い払われる。',
+        ),
+        ...sec(
+          '精子と遺伝',
+          '交尾のたびに貯精が減り、精巣の大きさに応じて毎日補われる。メスは発情中に何頭ともつがいうるので、子の父は生き残った精子の数に比例したくじ引きで決まる。',
+          'ホコ・精巣・体格・気性・メスの好みは複数の遺伝子の足し算で、子は両親から半分ずつ受け継ぐ。ホコの遺伝子はメスも持っていて息子に渡す。近親交配では有害な劣性遺伝子がそろいやすい。',
+        ),
+        ...sec('操作', '浜の個体をクリックすると右の欄に詳しく出る。キーボードでは、スペースで進める／止める、Enterで1日進める。'),
         h('div', { class: 'row' }, btn('閉じる', () => done(), 'primary')),
       ),
     );
@@ -690,12 +757,11 @@ class Game implements GameView {
     const ruler = (cm: number, cls: string) => h('div', { class: `ruler ${cls}` }, h('i', { style: `height:${((cm / maxCm) * 100).toFixed(1)}%` }));
     return ask<Answer>((done) => {
       const title = pr.kind === 'challenged' ? `${opp.name}が見せ合いを挑んできた！` : `${opp.name}と互角のにらみ合い`;
+      const lose = pr.kind === 'challenged' ? pr.slotAtStake : w.player && w.slotOf(w.player) !== null;
       const desc =
         pr.kind === 'challenged'
-          ? pr.slotAtStake
-            ? '負ければ浜とハーレムを奪われる。'
-            : '受ければ序列を賭けた見せ合いになる。'
-          : '見せ合いでは決着がつかない。取っ組み合いに持ち込むか、ここで引くか。取っ組み合いは体格と体力がものを言い、負ければ深手を負う。';
+          ? `受けて立つ：ホコを見せ合う。差がはっきりすれば小さい方が引き、僅差ならもう一度、取っ組み合うかを選べる。引く：戦わずに負け${lose ? '、浜とハーレムを明け渡す' : '。ケガはしない'}。`
+          : `見せ合いでは決着がつかない。取っ組み合う：体格と体力がものを言い、負ければ深手を負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
       return h(
         'div',
         null,
@@ -708,14 +774,12 @@ class Game implements GameView {
           h('div', { class: 'vs' }, 'VS'),
           h('div', { class: 'side' }, portrait(opp, w, { rear: true }), h('div', { class: 'name' }, opp.name), ruler(pr.perceivedOpp, 'opp'), h('div', null, `推定 ${pr.perceivedOpp.toFixed(1)}cm`), pr.kind === 'escalate' ? h('div', { class: 'sub' }, `体重 ${Math.round(pr.oppBody)}kg`) : null),
         ),
-        h('div', { class: 'sub' }, `相手の${opp.base.aggression > 0.62 ? '目は血走っている' : opp.base.aggression < 0.38 ? '様子は落ち着いている' : '出方はわからない'}。体力 ${Math.round(p.condition * 100)}%・ケガ ${Math.round(p.injury * 100)}%`),
+        h('div', { class: 'sub' }, `相手の${opp.base.aggression > 0.62 ? '目は血走っている' : opp.base.aggression < 0.38 ? '様子は落ち着いている' : '出方はわからない'}。あなたの体力 ${Math.round(p.condition * 100)}%・ケガ ${Math.round(p.injury * 100)}%`),
+        pr.kind === 'escalate' ? h('div', { class: 'name' }, `取っ組み合いの勝ち目：およそ${Math.round(pr.winChance * 10)}割`) : null,
         h(
           'div',
           { class: 'row' },
-          btn('以後は気質に任せる', () => {
-            this.autoJudge = true;
-            done(w.aiAnswer(pr));
-          }, 'small'),
+          btn('今回は気質に任せる', () => done(w.aiAnswer(pr)), 'small'),
           btn('引く', () => done('retreat')),
           btn(pr.kind === 'challenged' ? '受けて立つ' : '取っ組み合う', () => done('accept'), 'primary'),
         ),
@@ -727,6 +791,10 @@ class Game implements GameView {
     const w = this.world;
     const p = w.player!;
     const line = (k: string, v: string) => h('tr', null, h('td', null, k), h('td', { class: 'r' }, v));
+    const outlook = (st: ForageStrategy) => {
+      const o = w.forageOutlook(st);
+      return `見込み：体力 ${o.delta >= 0 ? '+' : ''}${Math.round(o.delta * 100)}%・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
+    };
     return ask<ForageStrategy>((done) => {
       const choice = (key: ForageStrategy, label: string, desc: string) =>
         h('button', { class: `btn choice ${key === 'normal' ? 'primary' : ''}`, onclick: () => done(key) }, h('div', { class: 'btn-body' }, h('div', { class: 'name' }, label), h('div', { class: 'sub' }, desc)));
@@ -749,9 +817,9 @@ class Game implements GameView {
         h(
           'div',
           { class: 'choices' },
-          choice('cautious', '慎重に', '浅瀬で少しずつ食べる。太りにくいが、シャチに遭いにくい。'),
-          choice('normal', 'ふつうに', 'いつもどおり沖へ出る。'),
-          choice('greedy', '貪欲に', '遠くの餌場まで行く。よく太れるが、シャチに狙われやすい。ホコが大きいほど危ない。'),
+          choice('cautious', '慎重に', `浅瀬で少しずつ食べる。${outlook('cautious')}`),
+          choice('normal', 'ふつうに', `いつもどおり沖へ出る。${outlook('normal')}`),
+          choice('greedy', '貪欲に', `遠くの餌場まで行く。ホコが大きいほど泳ぎが遅く、シャチに狙われやすい。${outlook('greedy')}`),
         ),
       );
     });

@@ -8,7 +8,7 @@ import {
   testisMass,
   type Individual,
 } from '../sim/individual';
-import { GROOM_LABEL, causeLabel, type LogKind, type World } from '../sim/world';
+import { BREED_DAYS, GROOM_LABEL, causeLabel, type LogKind, type World } from '../sim/world';
 import { P } from '../render/palette';
 import { lineChart } from './chart';
 import { bar, btn, clear, h } from './dom';
@@ -25,6 +25,7 @@ export interface GameView {
   setTab(t: Tab): void;
   setLogFilter(f: LogKind | 'all'): void;
   stanceGuard(): void;
+  stanceAuto(): void;
   stanceRest(): void;
   stanceRoam(): void;
   openChallenge(): void;
@@ -82,8 +83,9 @@ function playerCard(g: GameView): HTMLElement {
     stat('体力', bar(p.condition, 'hp'), pct(p.condition)),
     stat('ケガ', bar(p.injury, 'hurt'), p.injury < 0.05 ? 'なし' : pct(p.injury)),
     stat('ホコ', bar(hoko / 70, 'hoko'), `${hoko.toFixed(1)}cm`),
+    stat('　素質', h('span', { class: 'sub' }, age < 7 ? '7歳まで育つ' : '太れば張る'), `${p.base.hoko.toFixed(1)}cm`),
     stat('貯精', bar(spermCap ? sperm / spermCap : 0, 'sperm'), `${Math.round(sperm)}億`),
-    stat('序列', h('span', { class: 'sub' }, rank ? `主型 ${rank.of} 頭中` : '―'), rank ? `${rank.rank}位` : '―'),
+    stat('序列', h('span', { class: 'sub' }, rank ? `戦績順・${rank.of}頭中` : '―'), rank ? `${rank.rank}位` : '―'),
     stat('ハーレム', bar(cap ? Math.min(1, harem / cap) : 0, 'love'), slot !== null ? `${harem}頭/見張${cap}` : 'なし'),
     stat('今季交尾', h('span'), `${p.season.matings}回`),
     stat('子', h('span'), `${p.childIds.length}頭`),
@@ -105,7 +107,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
   if (age < 4 || !p.onBeach) {
     box.append(
       h('div', { class: 'hint' }, p.onBeach ? `まだ若い（${age}歳）。大人たちのやり方を見て学ぼう。` : '浜を離れて海で体を休めている。'),
-      btn('成熟まで早送り', () => g.fastForward(), 'primary'),
+      btn('4歳まで早送り', () => g.fastForward(), 'primary'),
     );
     return box;
   }
@@ -113,8 +115,11 @@ function actions(g: GameView, p: Individual): HTMLElement {
   box.append(h('div', { class: 'plan' }, h('span', { class: 'k' }, '今日の予定'), h('span', null, planText(w))));
   if (p.base.tactic === 'R') {
     const holder = w.slotOf(p) !== null;
+    const harem = holder ? w.slotFemales(w.slotOf(p)!).length : 0;
     const hintText = holder
-      ? '主として浜を守っている。挑戦者を退け、メスを見張れ。'
+      ? harem === 0
+        ? 'まだメスがいない。メスは浜を見て回り、魅力のある主のもとへ自然に集まってくる。体力とホコの張りを保ち、浜を騒がしくしないで待とう。'
+        : '主として浜を守っている。挑戦者を退け、メスを見張れ。「おまかせ」なら様子を見てメスに構ってくれる。'
       : age < 5
         ? 'まだ挑むには若い。うろついて、隙をうかがおう。'
         : '主の座を狙うか、見張りの外のメスをうかがうか。';
@@ -122,19 +127,20 @@ function actions(g: GameView, p: Individual): HTMLElement {
     if (holder) {
       box.append(
         btn('守る', () => g.stanceGuard(), on('guard')),
+        btn('おまかせ', () => g.stanceAuto(), on('auto')),
         btn('メスに構う…', () => g.openAttend(), ['court', 'groom', 'tend', 'escort', 'soothe'].includes(st) ? 'on' : ''),
       );
     }
     if (age >= 5) box.append(btn('挑む…', () => g.openChallenge(), on('challenge')));
     if (!holder) box.append(btn('うろつく', () => g.stanceRoam(), on('roam')));
-    box.append(btn('休む', () => g.stanceRest(), on('rest')));
+    box.append(btn('海で食べる', () => g.stanceRest(), on('rest')));
   } else if (p.base.tactic === 'S') {
     const s = w.playerStance.kind === 'follow' ? w.playerStance.slot : null;
     const holder = s !== null ? w.get(w.slotHolders[s]) : undefined;
     box.append(
       h('div', { class: 'hint' }, holder ? `${holder.name}の浜に付き従っている。主が争う隙を待て。` : '付き従う主を選ぼう。'),
       btn('付き従う…', () => g.openSlotPick('follow'), on('follow')),
-      btn('休む', () => g.stanceRest(), on('rest')),
+      btn('海で食べる', () => g.stanceRest(), on('rest')),
     );
   } else {
     const s = w.playerStance.kind === 'infiltrate' ? w.playerStance.slot : null;
@@ -142,7 +148,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
     box.append(
       h('div', { class: 'hint' }, holder ? `メスのふりをして${holder.name}の浜に紛れている。` : '紛れ込む浜を選ぼう。'),
       btn('紛れ込む…', () => g.openSlotPick('infiltrate'), on('infiltrate')),
-      btn('休む', () => g.stanceRest(), on('rest')),
+      btn('海で食べる', () => g.stanceRest(), on('rest')),
     );
   }
   return box;
@@ -155,31 +161,34 @@ function planText(w: World): string {
   switch (s.kind) {
     case 'challenge': {
       const t = w.get(s.targetId);
-      return t ? `${t.name}に挑む${w.slotOf(t) !== null ? '（勝てば浜とハーレムを奪う）' : ''}` : '挑む相手がいない';
+      return t ? `${t.name}に挑む${w.slotOf(t) !== null ? '（勝てば浜とハーレムを奪う）' : ''}。今日限り` : '挑む相手がいない';
     }
-    case 'guard': return '浜を守る（見張れるメスが増え、取っ組み合いで粘る）';
-    case 'roam': return 'うろついて、見張りの外のメスをうかがう';
-    case 'rest': return '休む（痩せにくいが、交尾はしない）';
+    case 'guard': return '浜を守る（見張れるメスが増え、取っ組み合いで粘る）。変えるまで毎日続く';
+    case 'auto': return 'おまかせ：毎朝ハーレムの様子を見て、守る・なだめる・構うから選ぶ。変えるまで毎日続く';
+    case 'roam': return 'うろついて、見張りの外のメスをうかがう。変えるまで毎日続く';
+    case 'rest': return w.player && w.slotOf(w.player) !== null
+      ? '海で食べる（体力が戻る。ただし見張りはほとんどできない）。変えるまで毎日続く'
+      : '海で食べる（体力が戻る。交尾はしない）。変えるまで毎日続く';
     case 'follow': return `${holderName(s.slot)}の浜に付き従い、隙を待つ`;
     case 'infiltrate': return `メスのふりをして${holderName(s.slot)}の浜に紛れ込む`;
     case 'court': {
       const f = w.get(s.femaleId);
-      return f ? `${f.name}に迫ってつがう（${w.femaleStatus(f).label}）` : 'つがう相手がいない';
+      return f ? `${f.name}に迫ってつがう（${w.femaleStatus(f).label}）。今日限り` : 'つがう相手がいない';
     }
     case 'groom': {
       const f = w.get(s.femaleId);
-      return f ? `${f.name}に${GROOM_LABEL[s.type]}をさせる` : '世話をさせる相手がいない';
+      return f ? `${f.name}に${GROOM_LABEL[s.type]}をさせる。今日限り` : '世話をさせる相手がいない';
     }
     case 'tend': {
       const f = w.get(s.femaleId);
-      return f ? `${f.name}を毛づくろいしてあげる` : '構う相手がいない';
+      return f ? `${f.name}を毛づくろいしてあげる。今日限り` : '構う相手がいない';
     }
     case 'escort': {
       const f = w.get(s.femaleId);
-      return f ? `一日じゅう${f.name}に寄り添って守る` : '構う相手がいない';
+      return f ? `一日じゅう${f.name}に寄り添って守る。今日限り` : '構う相手がいない';
     }
     case 'soothe':
-      return '低い声で鳴いて、ハーレム全体をなだめる';
+      return '低い声で鳴いて、ハーレム全体をなだめる。今日限り';
   }
 }
 
@@ -258,7 +267,7 @@ function temperLabel(ind: Individual): string {
 /** 遺伝子型の表示：量的座位は対立遺伝子ごとの効果を棒で、離散座位は記号で */
 function genomeView(ind: Individual): HTMLElement {
   const g = ind.genome;
-  const box = h('div', null, h('h3', null, '遺伝子型'));
+  const box = h('details', { class: 'genome' }, h('summary', null, '遺伝子型を見る'));
   const grid = h('div', { class: 'genes' });
   const scale: Record<string, number> = { hoko: 6, body: 0.12, testis: 100, pref: 0.25, aggression: 0.25, boldness: 0.25, hubris: 0.12 };
   const label: Record<string, string> = {
@@ -439,7 +448,7 @@ export function renderLog(g: GameView, root: HTMLElement): void {
       h(
         'div',
         { class: `entry k-${e.kind}`, onclick: who ? () => g.select(who.id) : undefined },
-        h('span', { class: 'when' }, `${w.displayYear(e.year)}年${e.day + 1}日`),
+        h('span', { class: 'when' }, e.day >= BREED_DAYS ? `${w.displayYear(e.year)}年 冬` : `${w.displayYear(e.year)}年${e.day + 1}日`),
         h('span', null, e.text),
       ),
     );

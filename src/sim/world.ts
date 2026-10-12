@@ -33,7 +33,9 @@ export type Stance =
   // 主がメスのご機嫌を取る
   | { kind: 'tend'; femaleId: number }
   | { kind: 'escort'; femaleId: number }
-  | { kind: 'soothe' };
+  | { kind: 'soothe' }
+  // 主のおまかせ：毎朝ハーレムの様子を見て、上のどれかを自動で選ぶ
+  | { kind: 'auto' };
 
 /** 主が一頭のメスにかかりきりになる方針（その日限り） */
 const ONE_DAY_HOLDER_STANCES = new Set(['court', 'groom', 'tend', 'escort', 'soothe']);
@@ -59,6 +61,8 @@ export type Prompt =
       self: number;
       oppBody: number;
       selfBody: number;
+      /** 取っ組み合いでプレイヤーが勝つ見込み */
+      winChance: number;
     };
 
 export type Answer = 'accept' | 'retreat';
@@ -171,6 +175,8 @@ export class World {
   history: YearStats[] = [];
   private birthsThisYear = 0;
   private slotCache: Map<number, Individual[]> | null = null;
+  /** 主のとき、おまかせを選んでいるか */
+  holderAuto = false;
   /** 今日プレイヤーがなだめた浜 */
   private soothedSlot: number | null = null;
   /** 枠ごとの衛星型の数（メスの居場所選びで使う。日の始めに数える） */
@@ -323,8 +329,27 @@ export class World {
   defaultStance(p: Individual): Stance {
     if (p.base.tactic === 'S') return { kind: 'follow', slot: this.bestSlotBySize() };
     if (p.base.tactic === 'F') return { kind: 'infiltrate', slot: this.bestSlotBySize() };
-    if (this.slotOf(p) !== null) return { kind: 'guard' };
+    if (this.slotOf(p) !== null) return this.holderAuto ? { kind: 'auto' } : { kind: 'guard' };
     return { kind: 'roam' };
+  }
+
+  /** おまかせの判断：騒がしければなだめ、機嫌の悪いメスに構い、守りの手薄な発情メスに寄り添う */
+  private resolveAutoStance(p: Individual): Stance {
+    const s = this.slotOf(p);
+    if (s === null) return { kind: 'roam' };
+    const fs = this.slotFemales(s);
+    if (fs.length === 0) return { kind: 'guard' };
+    if (this.slotHarass[s] > 0.6) return { kind: 'soothe' };
+    const cap = this.guardCap(p);
+    // 見張りの外にいる発情メスがいれば、そばについて他のオスから守る
+    const exposed = fs.findIndex((f, i) => i >= cap && this.femaleStatus(f).estrus);
+    if (exposed >= 0) return { kind: 'escort', femaleId: fs[exposed].id };
+    const sulky = [...fs].sort((a, b) => a.loyalty - b.loyalty)[0];
+    if (sulky.loyalty < 0.15 && fs.length >= 2 && this.rng.chance(0.5)) return { kind: 'tend', femaleId: sulky.id };
+    const fond = fs.find((f) => f.loyalty > 0.4);
+    if (fond && p.injury > 0.15) return { kind: 'groom', femaleId: fond.id, type: 'wound' };
+    if (fond && p.shine < 0.03 && this.rng.chance(0.35)) return { kind: 'groom', femaleId: fond.id, type: 'hoko' };
+    return { kind: 'guard' };
   }
 
   displayYear(y = this.year): number {
@@ -333,6 +358,8 @@ export class World {
 
   setPlayerStance(s: Stance): void {
     this.playerStance = s;
+    if (s.kind === 'auto') this.holderAuto = true;
+    else if (s.kind === 'guard') this.holderAuto = false;
     const p = this.player;
     if (!p) return;
     if (s.kind === 'follow' || s.kind === 'infiltrate') p.slot = s.slot;
@@ -402,6 +429,7 @@ export class World {
       const k = this.playerStance.kind;
       // 守りに徹すれば広く見張れる。一頭にかまけていると見張りが手薄になる。
       if (k === 'guard') guarding = 1.3;
+      else if (k === 'rest') guarding = 0.4; // 海に出ている間は見張れない
       else if (k === 'soothe') guarding = 0.95;
       else if (ONE_DAY_HOLDER_STANCES.has(k)) guarding = 0.85;
     }
@@ -486,6 +514,7 @@ export class World {
       ind.loyalty = 0;
       ind.slot = null;
       ind.pupId = null;
+      ind.thought = null;
       if (ind.sex === 'M') ind.sperm = spermCapacity(ind, this.year);
       if (isAdultFemale(ind, this.year)) {
         if (ind.pregnancy) {
@@ -517,7 +546,7 @@ export class World {
       if (p.base.tactic !== 'R' && (this.playerStance.kind === 'follow' || this.playerStance.kind === 'infiltrate')) {
         p.slot = this.playerStance.slot;
       }
-      this.pushLog(`${this.displayYear()}年目の繁殖期が始まった。`, 'event');
+      this.pushLog(`${this.displayYear()}年目の繁殖期が始まった。メスたちは浜に着くと、どの主のもとにいるかを選び直す。`, 'event');
     }
   }
 
@@ -541,7 +570,8 @@ export class World {
       // 主は絶食で浜を守る。周辺のオスはときどき海へ出て食べる。
       if (ind.sex === 'M') drain = holder ? 0.011 : this.age(ind) >= 4 ? 0.0035 : 0.002;
       else drain = ind.pupId ? 0.009 : 0.005;
-      if (ind.id === this.playerId && this.playerStance.kind === 'rest') drain *= 0.6;
+      // 「海で食べる」日は、痩せるどころか少し戻る
+      if (ind.id === this.playerId && this.playerStance.kind === 'rest') drain = -0.012;
       ind.condition = Math.max(0, ind.condition - drain);
       if (ind.sex === 'M') ind.sperm = Math.min(spermCapacity(ind, y), ind.sperm + spermDaily(ind, y));
       ind.injury = Math.max(0, ind.injury - 0.004);
@@ -578,6 +608,17 @@ export class World {
       }
     }
 
+    // おまかせなら、今朝の様子を見て今日の行動を決める
+    const pl = this.player;
+    if (pl && this.playerStance.kind === 'auto') {
+      this.playerStance = this.resolveAutoStance(pl);
+      if (this.playerStance.kind !== 'guard') this.pushLog(`おまかせ：${autoLabel(this, this.playerStance)}`, 'player', pl.id);
+    }
+    // 痩せすぎの警告
+    if (pl && pl.onBeach && pl.sex === 'M' && this.age(pl) >= 4 && pl.condition < 0.2 && this.day % 3 === 0) {
+      this.pushLog(`体力が${Math.round(pl.condition * 100)}%しかない。10%を切ると浜にいられなくなる。「海で食べる」で取り戻そう。`, 'player', pl.id);
+    }
+
     // 4. 見せ合いと取っ組み合い
     yield* this.contestPhase();
 
@@ -610,7 +651,7 @@ export class World {
 
     // 一頭への働きかけはその日限り。翌日からは浜を守る。
     const pk = this.playerStance.kind;
-    if (ONE_DAY_HOLDER_STANCES.has(pk) && this.player) this.playerStance = this.defaultStance(this.player);
+    if ((ONE_DAY_HOLDER_STANCES.has(pk) || (this.holderAuto && pk === 'guard')) && this.player) this.playerStance = this.defaultStance(this.player);
     this.soothedSlot = null;
 
     this.day++;
@@ -669,6 +710,15 @@ export class World {
     return peers.length ? this.rng.pick(peers) : undefined;
   }
 
+  /** 取っ組み合いで me が勝つ確率。浜の主として受ける側には先住効果が付く。 */
+  fightOdds(me: Individual, opp: Individual, meResident: boolean, oppResident: boolean): number {
+    let pa = fightPower(me, this.year);
+    let pb = fightPower(opp, this.year);
+    if (meResident) pa *= 1.45 * (me.id === this.playerId && this.playerStance.kind === 'guard' ? 1.15 : 1);
+    if (oppResident) pb *= 1.45;
+    return 1 / (1 + Math.exp(-4 * Math.log(pa / pb)));
+  }
+
   /** 見せ合い →（必要なら）取っ組み合い。a が挑戦者、b が受ける側。 */
   private *contest(a: Individual, b: Individual): Generator<Prompt, void, Answer> {
     const slot = this.slotOf(b);
@@ -723,6 +773,7 @@ export class World {
         self: this.hoko(me),
         oppBody: bodyMass(opp, this.year),
         selfBody: bodyMass(me, this.year),
+        winChance: this.fightOdds(me, opp, slot !== null && me === b, slot !== null && opp === b),
       };
       if (ans === 'retreat') {
         this.pushLog(`${opp.name}とのにらみ合いで、先に目をそらした。`, 'player', me.id);
@@ -1275,10 +1326,43 @@ export class World {
 
   // ───────────────────────── 採餌期（年の変わり目） ─────────────────────────
 
+  private foodNow(): number {
+    const density = this.living().length / CARRYING;
+    return Math.min(0.7, Math.max(0.1, 0.62 * (1.5 - 0.85 * density)));
+  }
+
+  /** 採餌期の収支：食べて得る分と、体の維持費（ホコと精巣は高くつく組織） */
+  private forageBudget(ind: Individual, food: number, effort: number): { gain: number; upkeep: number } {
+    const age = this.age(ind);
+    let upkeep = 0.12;
+    if (ind.sex === 'M') {
+      upkeep += 0.07 * Math.pow(ind.base.hoko / 40, 2) * (age >= 4 ? 1 : 0.3);
+      upkeep += 0.05 * (testisMass(ind, this.year) / 350);
+    } else if (ind.pregnancy) upkeep += 0.08;
+    // 大きな体ほど一度に多く食べられる
+    const intake = ind.sex === 'M' && age >= 4 ? 1.3 : 1;
+    return { gain: food * effort * intake * (0.7 + 0.3 * ind.base.vigor), upkeep };
+  }
+
+  /** シャチに襲われる確率。大きなホコほど泳ぎが遅く、狙われやすい。 */
+  private orcaRisk(ind: Individual, orcaMul: number, condition = ind.condition): number {
+    const hokoRisk = ind.sex === 'M' && this.age(ind) >= 4 ? Math.pow(ind.base.hoko / 40, 3) : 1;
+    return 0.016 * orcaMul * hokoRisk * (1.2 - 0.5 * condition);
+  }
+
+  /** プレイヤーが採餌の方針を選ぶための見込み（体力の増減と、シャチに襲われる確率） */
+  forageOutlook(strat: ForageStrategy): { delta: number; orca: number } {
+    const p = this.player;
+    if (!p) return { delta: 0, orca: 0 };
+    const { effort, orcaMul } = FORAGE[strat];
+    const { gain, upkeep } = this.forageBudget(p, this.foodNow(), effort);
+    const after = Math.min(1, Math.max(0, p.condition + gain - upkeep));
+    return { delta: after - p.condition, orca: this.orcaRisk(p, orcaMul, after) };
+  }
+
   forage(playerStrategy: ForageStrategy = 'normal'): ForageReport {
     const living = this.living();
-    const density = living.length / CARRYING;
-    const food = Math.min(0.7, Math.max(0.1, 0.62 * (1.5 - 0.85 * density)));
+    const food = this.foodNow();
     const deaths: ForageReport['deaths'] = [];
     const p = this.player;
     const playerCondBefore = p?.condition ?? 0;
@@ -1286,18 +1370,9 @@ export class World {
     for (const ind of living) {
       const age = this.age(ind);
       const strat: ForageStrategy = ind.id === this.playerId ? playerStrategy : ind.base.boldness > 0.62 ? 'greedy' : ind.base.boldness < 0.38 ? 'cautious' : 'normal';
-      const effort = strat === 'cautious' ? 0.8 : strat === 'greedy' ? 1.22 : 1;
-      const orcaMul = strat === 'cautious' ? 0.5 : strat === 'greedy' ? 1.9 : 1;
-
-      // 体の維持費：ホコと精巣は高くつく組織
-      let upkeep = 0.12;
-      if (ind.sex === 'M') {
-        upkeep += 0.07 * Math.pow(ind.base.hoko / 40, 2) * (age >= 4 ? 1 : 0.3);
-        upkeep += 0.05 * (testisMass(ind, this.year) / 350);
-      } else if (ind.pregnancy) upkeep += 0.08;
-      // 大きな体ほど一度に多く食べられる
-      const intake = ind.sex === 'M' && age >= 4 ? 1.3 : 1;
-      const gain = food * effort * intake * (0.7 + 0.3 * ind.base.vigor) * this.rng.range(0.85, 1.15);
+      const { effort, orcaMul } = FORAGE[strat];
+      const { gain: meanGain, upkeep } = this.forageBudget(ind, food, effort);
+      const gain = meanGain * this.rng.range(0.85, 1.15);
       ind.condition = Math.min(1, Math.max(0, ind.condition + gain - upkeep));
 
       // 死亡
@@ -1313,8 +1388,7 @@ export class World {
       else if (age <= 2) add(0.07, 'sick');
       else add(ind.sex === 'M' ? 0.06 : 0.045, 'sick');
       if (age > 11) add(0.07 * (age - 11), 'old');
-      const hokoRisk = ind.sex === 'M' && age >= 4 ? Math.pow(ind.base.hoko / 40, 3) : 1;
-      const pOrca = 0.016 * orcaMul * hokoRisk * (1.2 - 0.5 * ind.condition);
+      const pOrca = this.orcaRisk(ind, orcaMul);
       if (pDie === 0) add(pOrca, 'orca');
       if (pDie === 0 && ind.condition < 0.08) add(0.6, 'starve');
       else if (pDie === 0 && ind.condition < 0.16) add(0.2, 'starve');
@@ -1467,6 +1541,25 @@ export class World {
       },
     });
     if (this.history.length > 300) this.history.shift();
+  }
+}
+
+/** 採餌の方針ごとの、食べる量とシャチに遭う危険の倍率 */
+export const FORAGE: Record<ForageStrategy, { effort: number; orcaMul: number }> = {
+  cautious: { effort: 0.88, orcaMul: 0.4 },
+  normal: { effort: 1, orcaMul: 1 },
+  greedy: { effort: 1.15, orcaMul: 2.6 },
+};
+
+/** おまかせで選んだ行動の説明 */
+function autoLabel(w: World, s: Stance): string {
+  const name = (id: number) => w.get(id)?.name ?? '―';
+  switch (s.kind) {
+    case 'soothe': return '浜が騒がしいので、ハーレムをなだめる';
+    case 'escort': return `見張りの外にいる発情中の${name(s.femaleId)}に寄り添う`;
+    case 'tend': return `機嫌の悪い${name(s.femaleId)}を毛づくろいしてやる`;
+    case 'groom': return `${name(s.femaleId)}に${GROOM_LABEL[s.type]}をさせる`;
+    default: return '浜を守る';
   }
 }
 

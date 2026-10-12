@@ -150,6 +150,8 @@ describe('主としての行動', () => {
     f.slot = 0;
     f.onBeach = true;
     (w as unknown as { invalidateSlots(): void }).invalidateSlots();
+    // ほかのオスは負けた直後ということにして、今日は挑んでこないようにする
+    for (const m of w.living()) if (m.sex === 'M' && m.id !== p.id) m.lastLossDay = w.day;
     return { w, p, f };
   }
 
@@ -215,5 +217,23 @@ describe('主としての行動', () => {
     w.setPlayerStance({ kind: 'soothe' });
     runDay(w);
     expect(w.slotHarass[s]).toBeLessThan(1);
+  });
+
+  it('おまかせは、騒がしい浜ならなだめる', () => {
+    const { w, p } = setupHolder();
+    const s = w.slotOf(p)!;
+    w.slotHarass[s] = 3;
+    w.setPlayerStance({ kind: 'auto' });
+    runDay(w);
+    expect(w.log.some((l) => l.text.includes('おまかせ：浜が騒がしい'))).toBe(true);
+    expect(w.playerStance.kind).toBe('auto');
+  });
+
+  it('海で食べると体力が戻る', () => {
+    const { w, p } = setupHolder();
+    p.condition = 0.3;
+    w.setPlayerStance({ kind: 'rest' });
+    runDay(w);
+    expect(p.condition).toBeGreaterThan(0.3);
   });
 });
