@@ -1,5 +1,6 @@
 import type { Individual, Thought } from './individual';
 import type { Rng } from './rng';
+import { VARIANTS, type Tag } from './thought-variants';
 
 export type ThoughtKey =
   | 'winDisplay' | 'loseDisplay' | 'winFight' | 'loseFight'
@@ -302,18 +303,23 @@ export function makeThought(
   ind: Individual,
   key: ThoughtKey,
   rng: Rng,
-  ctx: { year: number; day: number; other?: string; n?: number },
+  ctx: { year: number; day: number; other?: string; n?: number; tags?: Tag[]; cm?: number },
 ): Thought {
   const e = T[key];
   let pool = e.any;
   const brashness = (ind.base.aggression + ind.base.boldness) / 2;
-  if (e.brash && brashness > 0.6 && rng.chance(0.7)) pool = e.brash;
+  // 状況に合うセリフがあれば、そちらを優先する
+  const v = VARIANTS[key];
+  const matched = v ? (ctx.tags ?? []).filter((t) => v[t]?.length) : [];
+  if (v && matched.length > 0 && rng.chance(0.75)) pool = v[rng.pick(matched)]!;
+  else if (e.brash && brashness > 0.6 && rng.chance(0.7)) pool = e.brash;
   else if (e.timid && brashness < 0.4 && rng.chance(0.7)) pool = e.timid;
   const age = ind.ageAt(ctx.year);
   const text = rng
     .pick(pool)
     .replaceAll('{I}', pronoun(ind, age))
     .replaceAll('{other}', ctx.other ?? '誰か')
-    .replaceAll('{n}', String(ctx.n ?? 0));
+    .replaceAll('{n}', String(ctx.n ?? 0))
+    .replaceAll('{cm}', String(Math.round(ctx.cm ?? 0)));
   return { text, year: ctx.year, day: ctx.day, mood: e.mood };
 }

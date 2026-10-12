@@ -15,6 +15,7 @@ import {
 import { geneticHoko, potentialStars, starText } from './lineage';
 import { randomName } from './names';
 import { Rng } from './rng';
+import { type Tag } from './thought-variants';
 import { makeThought, type ThoughtKey } from './thoughts';
 
 export const BREED_DAYS = 40;
@@ -811,7 +812,7 @@ export class World {
     const selfA = this.hoko(a) * (1 + a.base.hubris);
     const selfB = this.hoko(b) * (1 + b.base.hubris);
 
-    if (b.id !== pid && a.id !== pid && percAofB / selfA > 1.15) this.think(a, 'rivalBigger', { other: b.name });
+    if (b.id !== pid && a.id !== pid && percAofB / selfA > 1.15) this.think(a, 'rivalBigger', { about: b });
 
     // 受ける側がプレイヤーなら、受けるか引くかを聞く
     if (b.id === pid) {
@@ -906,14 +907,14 @@ export class World {
       w.season.displaysWon++;
       w.lifetime.displaysWon++;
       l.season.displaysLost++;
-      this.think(w, 'winDisplay', { other: l.name }, 0.5);
-      this.think(l, 'loseDisplay', { other: w.name }, 0.5);
+      this.think(w, 'winDisplay', { about: l }, 0.5);
+      this.think(l, 'loseDisplay', { about: w }, 0.5);
     } else {
       w.season.fightsWon++;
       w.lifetime.fightsWon++;
       l.season.fightsLost++;
-      this.think(w, 'winFight', { other: l.name }, 0.7);
-      this.think(l, 'loseFight', { other: w.name }, 0.7);
+      this.think(w, 'winFight', { about: l }, 0.7);
+      this.think(l, 'loseFight', { about: w }, 0.7);
     }
     const pid = this.playerId;
     const how = kind === 'display' ? '見せ合い' : '取っ組み合い';
@@ -926,12 +927,12 @@ export class World {
       w.slot = slot;
       l.slot = null;
       this.dayEvents.push({ kind: 'takeover', slot, newId: w.id, oldId: l.id });
-      this.think(w, 'takeHarem', { other: l.name });
-      this.think(l, 'loseHarem', { other: w.name });
+      this.think(w, 'takeHarem', { about: l });
+      this.think(l, 'loseHarem', { about: w });
       for (const f of this.slotFemales(slot)) {
         // 主が替わると愛着は薄れる。懐きやすいメスほど新しい主にも早くなじむ。
         f.loyalty = f.loyalty * 0.25 + 0.2 * f.warmth;
-        if (this.rng.chance(0.25)) this.think(f, 'newHolderFemale', { other: w.name });
+        if (this.rng.chance(0.25)) this.think(f, 'newHolderFemale', { about: w });
       }
       if (w.id === pid) {
         this.pushLog(`${l.name}から浜を奪った！ ハーレムの主になった。`, 'player', w.id);
@@ -946,7 +947,7 @@ export class World {
     } else if (slot !== null) {
       // 防衛成功：ハーレムのメスが見ている
       for (const f of this.slotFemales(slot)) {
-        if (this.rng.chance(0.06)) this.think(f, 'fAdmire', { other: w.name });
+        if (this.rng.chance(0.06)) this.think(f, 'fAdmire', { about: w });
         f.loyalty = Math.min(1, f.loyalty + 0.03);
       }
     }
@@ -989,7 +990,7 @@ export class World {
       if (!initial) {
         const h = this.get(this.slotHolders[best])!;
         if (crowded || harassed) this.think(f, 'fMoveCrowded', {}, 0.6);
-        else this.think(f, 'fMoveAttracted', { other: h.name }, 0.4);
+        else this.think(f, 'fMoveAttracted', { about: h }, 0.4);
         if (oldHolder && oldHolder.id === this.playerId) this.pushLog(`${f.name}がハーレムを去った。`, 'player', f.id);
         if (h.id === this.playerId) this.pushLog(`${f.name}がハーレムにやってきた。`, 'player', f.id);
       }
@@ -1063,14 +1064,14 @@ export class World {
       p.season.groomed++;
       this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: p.id, type: st.type });
       this.pushLog(`${f.name}に${what}をさせた。`, 'player', f.id);
-      this.think(p, st.type === 'hoko' ? 'groomedHoko' : st.type === 'wound' ? 'groomedWound' : 'groomedFur', { other: f.name });
-      this.think(f, 'fOrderedOk', { other: p.name }, 0.7);
+      this.think(p, st.type === 'hoko' ? 'groomedHoko' : st.type === 'wound' ? 'groomedWound' : 'groomedFur', { about: f });
+      this.think(f, 'fOrderedOk', { about: p }, 0.7);
       return;
     }
     f.loyalty = Math.max(0, f.loyalty - 0.1);
     this.pushLog(`${f.name}に${what}をさせようとしたが、そっぽを向かれた。`, 'player', f.id);
-    this.think(f, 'fOrderedNo', { other: p.name });
-    this.think(p, 'orderRefused', { other: f.name }, 0.7);
+    this.think(f, 'fOrderedNo', { about: p });
+    this.think(p, 'orderRefused', { about: f }, 0.7);
     // 愛想を尽かしたメスは浜を出ていく
     if (f.loyalty < 0.1 && this.rng.chance(0.35)) {
       const others = this.slotHolders.map((_, i) => i).filter((i) => i !== s && this.slotHolders[i] != null);
@@ -1111,8 +1112,8 @@ export class World {
     p.condition = Math.max(0, p.condition - 0.003);
     this.dayEvents.push({ kind: 'tend', maleId: p.id, femaleId: f.id });
     this.pushLog(`${f.name}の背中を毛づくろいしてやった。`, 'player', f.id);
-    this.think(f, 'fTended', { other: p.name });
-    this.think(p, 'tendDone', { other: f.name }, 0.6);
+    this.think(f, 'fTended', { about: p });
+    this.think(p, 'tendDone', { about: f }, 0.6);
   }
 
   /** 主が低い声で鳴いて、ハーレム全体を落ち着かせる */
@@ -1127,7 +1128,7 @@ export class World {
     const fs = this.slotFemales(s);
     for (const f of fs) {
       f.loyalty = Math.min(1, f.loyalty + 0.03);
-      this.think(f, 'fSoothed', { other: p.name }, 0.15);
+      this.think(f, 'fSoothed', { about: p }, 0.15);
     }
     this.dayEvents.push({ kind: 'soothe', maleId: p.id, slot: s });
     this.pushLog(`低い声で鳴いて、ハーレムの${fs.length}頭を落ち着かせた。`, 'player', p.id);
@@ -1154,8 +1155,8 @@ export class World {
     if (!this.femaleStatus(f).estrus) {
       f.loyalty = Math.max(0, f.loyalty - 0.04);
       this.pushLog(`${f.name}に迫ったが、まだその時期ではないと突っぱねられた。`, 'player', f.id);
-      this.think(f, 'fCourtNotYet', { other: p.name });
-      this.think(p, 'courtRefused', { other: f.name }, 0.7);
+      this.think(f, 'fCourtNotYet', { about: p });
+      this.think(p, 'courtRefused', { about: f }, 0.7);
       return null;
     }
     if (p.sperm < 1) {
@@ -1164,10 +1165,10 @@ export class World {
     }
     if (!this.rng.chance(0.75 + 0.25 * f.loyalty)) {
       this.pushLog(`${f.name}に迫ったが、今日は気が乗らないらしい。`, 'player', f.id);
-      this.think(p, 'courtRefused', { other: f.name }, 0.7);
+      this.think(p, 'courtRefused', { about: f }, 0.7);
       return null;
     }
-    this.think(f, 'fCourtAccept', { other: p.name }, 0.6);
+    this.think(f, 'fCourtAccept', { about: p }, 0.6);
     this.mate(p, f, 'holder');
     return f.id;
   }
@@ -1180,7 +1181,7 @@ export class World {
       esc.loyalty = Math.min(1, esc.loyalty + 0.06);
       this.dayEvents.push({ kind: 'tend', maleId: this.player.id, femaleId: esc.id });
       this.pushLog(`一日じゅう${esc.name}${esc.pupId ? 'と子' : ''}に寄り添って守った。`, 'player', esc.id);
-      this.think(esc, 'fEscorted', { other: this.player.name }, 0.6);
+      this.think(esc, 'fEscorted', { about: this.player }, 0.6);
     }
     for (let s = 0; s < this.slotHolders.length; s++) {
       const h = this.get(this.slotHolders[s]);
@@ -1201,8 +1202,8 @@ export class World {
         this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: h.id, type });
         const hk: ThoughtKey = type === 'hoko' ? 'groomedHoko' : type === 'wound' ? 'groomedWound' : 'groomedFur';
         const fk: ThoughtKey = type === 'hoko' ? 'fGroomHoko' : type === 'wound' ? 'fGroomWound' : 'fGroomFur';
-        this.think(h, hk, { other: f.name }, h.id === this.playerId ? 0.5 : 0.15);
-        this.think(f, fk, {}, 0.12);
+        this.think(h, hk, { about: f }, h.id === this.playerId ? 0.5 : 0.15);
+        this.think(f, fk, { about: h }, 0.12);
       }
     }
   }
@@ -1263,7 +1264,7 @@ export class World {
         const m = this.rng.weighted(roamers, (r) => Math.max(1, r.elo - 700) * (r.id === this.playerId ? 2 : 1))!;
         const protest = this.rng.chance(0.25 + 0.4 * f.base.pref);
         if (protest && h && !h.foughtToday && this.rng.chance(0.5)) {
-          this.think(f, 'fProtest', { other: m.name }, 0.5);
+          this.think(f, 'fProtest', { about: m }, 0.5);
           this.chase(h, m, s);
         } else {
           this.mate(m, f, 'peripheral');
@@ -1307,7 +1308,7 @@ export class World {
     intruder.injury = Math.min(1, intruder.injury + 0.05);
     if (slot !== null) this.slotHarass[slot] += 0.3;
     this.dayEvents.push({ kind: 'chase', holderId: h.id, intruderId: intruder.id });
-    this.think(intruder, 'sneakCaught', { other: h.name }, 0.6);
+    this.think(intruder, 'sneakCaught', { about: h }, 0.6);
     if (intruder.id === this.playerId) this.pushLog(`${h.name}に見つかって追い払われた。`, 'player', intruder.id);
     if (h.id === this.playerId) this.pushLog(`ハーレムに忍び寄った${intruder.name}を追い払った。`, 'player', h.id);
   }
@@ -1323,8 +1324,8 @@ export class World {
     if (how === 'sneaker') this.think(m, 'sneakSuccess', {}, 0.6);
     else if (how === 'satellite') this.think(m, 'satelliteSuccess', {}, 0.6);
     else if (n >= 3 && n % 2 === 1) this.think(m, 'matedMany', { n }, 0.6);
-    else this.think(m, 'mated', { other: f.name }, 0.5);
-    this.think(f, 'fMated', { other: m.name }, 0.1);
+    else this.think(m, 'mated', { about: f }, 0.5);
+    this.think(f, 'fMated', { about: m }, 0.1);
     if (m.id === this.playerId) this.pushLog(`${f.name}とつがった。（今季${n}回目・射精${amount.toFixed(0)}億）`, 'player', m.id);
   }
 
@@ -1365,7 +1366,7 @@ export class World {
     this.birthsThisYear++;
     if (father) this.paternity[father.base.tactic]++;
     this.dayEvents.push({ kind: 'birth', motherId: f.id, pupId: pup.id });
-    this.think(f, 'fGaveBirth', { other: pup.name }, 0.5);
+    this.think(f, 'fGaveBirth', { about: pup }, 0.5);
     // 子の素質（オスはホコの素質、メスは息子に伝わる遺伝的な値）
     const potential = pup.sex === 'M' ? pup.base.hoko : geneticHoko(pup);
     const stars = potentialStars(potential, this.herdHokoMean());
@@ -1376,7 +1377,7 @@ export class World {
       this.pushLog(`一族の子「${pup.name}」（${label}）が生まれた。`, 'dynasty', pup.id);
     }
     if (pup.dynasty > 0 && pup.sex === 'M' && pup.base.tactic === 'R') {
-      if (stars >= 5) this.think(f, 'fBigPup', { other: pup.name });
+      if (stars >= 5) this.think(f, 'fBigPup', { about: pup });
       if (this.bestHoko && pup.base.hoko > this.bestHoko.value) {
         this.bestHoko = { id: pup.id, name: pup.name, value: pup.base.hoko, year: this.year };
         this.pushLog(`一族最高の素質！「${pup.name}」は育てばホコ${pup.base.hoko.toFixed(1)}cmになる。`, 'dynasty', pup.id);
@@ -1396,7 +1397,9 @@ export class World {
         if (s !== null) key = ind.condition < 0.3 ? 'holderFasting' : 'holderIdle';
         else key = 'peripheralIdle';
       } else key = 'fIdle';
-      this.think(ind, key, {}, 1);
+      // メスは自分のいる浜の主を思い浮かべる
+      const about = ind.sex === 'F' && ind.slot !== null ? this.get(this.slotHolders[ind.slot]) : undefined;
+      this.think(ind, key, { about }, 1);
     }
   }
 
@@ -1593,15 +1596,42 @@ export class World {
 
   // ───────────────────────── 記録 ─────────────────────────
 
-  private think(ind: Individual, key: ThoughtKey, ctx: { other?: string; n?: number }, prob = 1): void {
+  private think(ind: Individual, key: ThoughtKey, ctx: { other?: string; n?: number; about?: Individual }, prob = 1): void {
     if (!ind.alive && key !== 'fPupLost') return;
     if (prob < 1 && !this.rng.chance(prob)) return;
-    ind.thought = makeThought(ind, key, this.rng, { year: this.year, day: this.day, ...ctx });
+    const { tags, cm } = this.thoughtTags(ind, ctx.about);
+    ind.thought = makeThought(ind, key, this.rng, { year: this.year, day: this.day, other: ctx.other ?? ctx.about?.name, n: ctx.n, tags, cm });
     if (ind.id === this.playerId) {
       this.pushLog(`「${ind.thought.text}」`, 'thought', ind.id);
     } else if (this.isPlayerHaremFemale(ind) || (ind.dynasty > 0 && this.rng.chance(0.3))) {
       this.pushLog(`${ind.name}「${ind.thought.text}」`, 'thought', ind.id);
     }
+  }
+
+  /** セリフを選ぶための札：話題のオスのホコの大きさ、メスの愛着と好み、年齢 */
+  private thoughtTags(ind: Individual, about?: Individual): { tags: Tag[]; cm?: number } {
+    const tags: Tag[] = [];
+    const male = ind.sex === 'M' ? ind : about && about.sex === 'M' && this.age(about) >= 4 ? about : undefined;
+    const female = ind.sex === 'F' ? ind : about && about.sex === 'F' ? about : undefined;
+    let cm: number | undefined;
+    if (male && this.age(male) >= 4) {
+      cm = this.hoko(male);
+      const mean = this.herdHokoMean();
+      if (cm >= mean + 4) tags.push('big');
+      else if (cm <= mean - 4) tags.push('small');
+    }
+    if (female && this.age(female) >= 3) {
+      if (female.loyalty > 0.55) tags.push('fond');
+      else if (female.loyalty < 0.15 && female.slot !== null) tags.push('cold');
+      if (female.base.pref > 0.62) tags.push('hokoFan');
+      else if (female.base.pref < 0.38) tags.push('gentleFan');
+    }
+    if (ind.sex === 'M') {
+      const age = this.age(ind);
+      if (age >= 12) tags.push('old');
+      else if (age <= 6) tags.push('young');
+    }
+    return { tags, cm };
   }
 
   isPlayerHaremFemale(ind: Individual): boolean {
