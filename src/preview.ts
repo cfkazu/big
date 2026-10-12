@@ -1,11 +1,11 @@
-// 開発用：スプライトを並べて拡大表示する
+// 開発用：スプライトを並べて拡大表示する（毛色・体格の段階・アイコン）
 import { P } from './render/palette';
 import { getBubble, getIcon, getSprite, type IconId, type SpriteId } from './render/sprites';
 
-const S = 6;
+const S = 5;
 const cv = document.getElementById('c') as HTMLCanvasElement;
-const W = 200;
-const H = 120;
+const W = 240;
+const H = 150;
 cv.width = W * S;
 cv.height = H * S;
 const ctx = cv.getContext('2d')!;
@@ -23,12 +23,23 @@ for (const coat of coats) {
     ctx.drawImage(sp, x, y);
     x += sp.width + 3;
   }
-  const sp = getSprite('male', { coat, collar: false, scars: false, frame: 1, flip: true });
-  ctx.drawImage(sp, x, y);
   y += 22;
 }
-const icons: IconId[] = ['heart', 'bang', 'sweat', 'note', 'sparkle', 'anger', 'zzz', 'crown', 'arrow', 'dot', 'cross', 'plus', 'skull', 'scheme', 'dots'];
+// 体格の段階
 let x = 2;
+for (const grow of [{ cols: -3, rows: -1 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 4, rows: 1 }, { cols: 6, rows: 2 }]) {
+  const sp = getSprite('male', { coat: 'brown', collar: false, scars: false, frame: 0, flip: false, grow });
+  ctx.drawImage(sp, x, y + 20 - sp.height);
+  x += sp.width + 3;
+}
+for (const grow of [{ cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]) {
+  const sp = getSprite('female', { coat: 'gray', collar: false, scars: false, frame: 0, flip: false, grow });
+  ctx.drawImage(sp, x, y + 20 - sp.height);
+  x += sp.width + 3;
+}
+y += 26;
+const icons: IconId[] = ['heart', 'bang', 'sweat', 'note', 'sparkle', 'anger', 'zzz', 'crown', 'arrow', 'dot', 'cross', 'plus', 'skull', 'scheme', 'dots'];
+x = 2;
 for (const ic of icons) {
   ctx.drawImage(getBubble(ic), x, y);
   ctx.drawImage(getIcon(ic), x + 2, y + 12);

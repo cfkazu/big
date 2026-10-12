@@ -118,6 +118,34 @@ export interface SpriteVariant {
   scars: boolean;
   frame: 0 | 1;
   flip: boolean;
+  /** 体の大きさ：胴の列（長さ）と行（厚み）を何本増減するか */
+  grow?: Grow;
+}
+
+export interface Grow {
+  cols: number;
+  rows: number;
+}
+
+/**
+ * 体格の違いは拡大縮小ではなく、胴の途中の列・行を複製（または削除）して表す。
+ * ドットが崩れず、頭や鰭の形も保たれる。
+ */
+const STRETCH: Record<SpriteId, { col: number; row: number }> = {
+  male: { col: 21, row: 10 },
+  maleRear: { col: 16, row: 12 },
+  subadult: { col: 14, row: 7 },
+  female: { col: 10, row: 6 },
+  juvenile: { col: 8, row: 4 },
+  pup: { col: 5, row: 3 },
+};
+
+function stretch(rows: string[], id: SpriteId, g: Grow): string[] {
+  const { col, row } = STRETCH[id];
+  const out = rows.slice();
+  if (g.rows > 0) for (let k = 0; k < g.rows; k++) out.splice(row, 0, out[row]);
+  else if (g.rows < 0) out.splice(row, -g.rows);
+  return out.map((r) => (g.cols >= 0 ? r.slice(0, col) + r[col].repeat(g.cols) + r.slice(col) : r.slice(0, col) + r.slice(col - g.cols)));
 }
 
 /** たてがみの境目（この列より頭側が白くなる）と、たてがみが及ぶ最下行 */
@@ -134,9 +162,9 @@ function pad(rows: string[]): string[] {
   return rows.map((r) => r.padEnd(w, '.'));
 }
 
-export function spriteSize(id: SpriteId): { w: number; h: number } {
+export function spriteSize(id: SpriteId, g: Grow = { cols: 0, rows: 0 }): { w: number; h: number } {
   const rows = SPRITES[id];
-  return { w: Math.max(...rows.map((r) => r.length)), h: rows.length + 1 };
+  return { w: Math.max(...rows.map((r) => r.length)) + g.cols, h: rows.length + 1 + g.rows };
 }
 
 function colorFor(ch: string, coat: CoatKey, mane: boolean): string | null {
@@ -163,17 +191,20 @@ function colorFor(ch: string, coat: CoatKey, mane: boolean): string | null {
 
 /** 毛色・襟・傷・コマ・向きごとにキャンバスを作ってキャッシュする */
 export function getSprite(id: SpriteId, v: SpriteVariant): HTMLCanvasElement {
-  const key = `${id}|${v.coat}|${v.collar ? 1 : 0}|${v.scars ? 1 : 0}|${v.frame}|${v.flip ? 1 : 0}`;
+  const g = v.grow ?? { cols: 0, rows: 0 };
+  const key = `${id}|${v.coat}|${v.collar ? 1 : 0}|${v.scars ? 1 : 0}|${v.frame}|${v.flip ? 1 : 0}|${g.cols}|${g.rows}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  const rows = pad(SPRITES[id]);
+  const baseW = pad(SPRITES[id])[0].length;
+  const rows = stretch(pad(SPRITES[id]), id, g);
   const w = rows[0].length;
   const h = rows.length + 1; // こぶの分 1px 余白
   const cv = document.createElement('canvas');
   cv.width = w;
   cv.height = h;
   const ctx = cv.getContext('2d')!;
-  const [h0, h1] = HUMP[id];
+  const [h0, hEnd] = HUMP[id];
+  const h1 = hEnd + g.cols;
   const mane = v.collar ? MANE[id] : undefined;
   for (let y = 0; y < rows.length; y++) {
     // たてがみの境目は行ごとに少し揺らして、ふさふさに見せる
@@ -196,7 +227,7 @@ export function getSprite(id: SpriteId, v: SpriteVariant): HTMLCanvasElement {
   if (v.scars) {
     // 首まわりの古傷（ピンクの線）
     ctx.fillStyle = P.pink1;
-    const sx = Math.floor(w * 0.28);
+    const sx = Math.floor(baseW * 0.28);
     const marks = [[0, 0], [1, 1], [2, 0], [3, 1]];
     for (const [dx, dy] of marks) {
       const x = sx + dx;

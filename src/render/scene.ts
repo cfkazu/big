@@ -1,9 +1,9 @@
 import type { Individual } from '../sim/individual';
-import { hokoDisplay } from '../sim/individual';
+import { bodyMass, hokoDisplay } from '../sim/individual';
 import { Rng } from '../sim/rng';
 import type { World, WorldEvent } from '../sim/world';
 import { P, type CoatKey } from './palette';
-import { getBubble, getIcon, getOutline, getSprite, spriteSize, type IconId, type SpriteId } from './sprites';
+import { getBubble, getIcon, getOutline, getSprite, spriteSize, type Grow, type IconId, type SpriteId } from './sprites';
 
 export const VIEW_W = 384;
 export const VIEW_H = 216;
@@ -38,7 +38,7 @@ interface Particle {
   vy: number;
   until: number;
   born: number;
-  kind: 'heart' | 'sparkle' | 'dust' | 'plus' | 'sweat';
+  kind: 'heart' | 'sparkle' | 'dust' | 'plus' | 'sweat' | 'splash' | 'blood';
 }
 
 interface Gauge {
@@ -171,7 +171,8 @@ export class Scene {
   private gauges: Gauge[] = [];
   private timeline: Timed[] = [];
   private now = 0;
-  private orca: { x: number; y: number; dir: number } | null = null;
+  /** 採餌期に実際にシャチに襲われた数だけ現れる */
+  private orcas: { x: number; y: number; dir: number; targetX: number; start: number; splashed: boolean; diveUntil: number }[] = [];
   private gulls: { x: number; y: number; vx: number; phase: number }[] = [];
   selectedId: number | null = null;
   hoverId: number | null = null;
@@ -351,9 +352,22 @@ export class Scene {
       });
     });
 
-    // ときどきシャチの背びれが沖を横切る
-    if (!this.orca && Math.random() < 0.08) this.orca = { x: Math.random() < 0.5 ? -10 : VIEW_W + 10, y: 10 + Math.random() * 20, dir: 0 };
-    if (this.orca && this.orca.dir === 0) this.orca.dir = this.orca.x < 0 ? 1 : -1;
+  }
+
+  /** 採餌期のシャチの襲撃を、沖の背びれと水しぶきで見せる */
+  playOrcaAttacks(n: number): void {
+    for (let i = 0; i < n; i++) {
+      const fromLeft = Math.random() < 0.5;
+      this.orcas.push({
+        x: fromLeft ? -12 : VIEW_W + 12,
+        y: 10 + Math.random() * 24,
+        dir: fromLeft ? 1 : -1,
+        targetX: 60 + Math.random() * (VIEW_W - 120),
+        start: this.now + i * 450,
+        splashed: false,
+        diveUntil: 0,
+      });
+    }
   }
 
   private bubblePriority(ind: Individual): number {
@@ -471,14 +485,15 @@ export class Scene {
 
   private burst(x: number, y: number, kind: Particle['kind'], n: number): void {
     for (let i = 0; i < n; i++) {
-      const life = kind === 'dust' ? 500 : 1100;
+      const water = kind === 'splash' || kind === 'blood';
+      const life = kind === 'dust' ? 500 : water ? 800 : 1100;
       this.particles.push({
         x: x + (Math.random() - 0.5) * 8,
         y: y + (Math.random() - 0.5) * 3,
-        vx: kind === 'dust' ? (Math.random() - 0.5) * 30 : (Math.random() - 0.5) * 6,
-        vy: kind === 'dust' ? -Math.random() * 10 : -10 - Math.random() * 6,
-        born: this.now + i * 120,
-        until: this.now + i * 120 + life,
+        vx: kind === 'dust' || water ? (Math.random() - 0.5) * 30 : (Math.random() - 0.5) * 6,
+        vy: kind === 'dust' ? -Math.random() * 10 : water ? -20 - Math.random() * 20 : -10 - Math.random() * 6,
+        born: this.now + (water ? 0 : i * 120),
+        until: this.now + (water ? 0 : i * 120) + life,
         kind,
       });
     }
@@ -486,7 +501,29 @@ export class Scene {
 
   // ───────────────────────── 描画 ─────────────────────────
 
-  private spriteFor(ind: Individual, a: Actor): { id: SpriteId; coat: CoatKey; collar: boolean } {
+  /** 体重を絵の大きさに：胴の長さと厚みを段階的に変える */
+  private growFor(ind: Individual, id: SpriteId): Grow {
+    const m = bodyMass(ind, this.world.year);
+    const tiers = (edges: number[], out: Grow[]): Grow => {
+      for (let i = 0; i < edges.length; i++) if (m < edges[i]) return out[i];
+      return out[out.length - 1];
+    };
+    switch (id) {
+      case 'male':
+      case 'maleRear':
+        return tiers([1150, 1350, 1600, 1850, 2100], [
+          { cols: -3, rows: -1 }, { cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 4, rows: 1 }, { cols: 6, rows: 2 },
+        ]);
+      case 'subadult':
+        return tiers([600, 850, 1100], [{ cols: -2, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]);
+      case 'female':
+        return tiers([470, 560, 660, 800], [{ cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 1, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]);
+      default:
+        return { cols: 0, rows: 0 };
+    }
+  }
+
+  private spriteFor(ind: Individual, a: Actor): { id: SpriteId; coat: CoatKey; collar: boolean; grow: Grow } {
     const w = this.world;
     const age = w.age(ind);
     const coat: CoatKey = age === 0 ? 'pup' : ind.base.coat;
@@ -497,7 +534,7 @@ export class Scene {
     else if (age < 7) id = 'subadult';
     else id = a.pose === 'rear' || a.pose === 'fight' ? 'maleRear' : 'male';
     if (id === 'subadult' && (a.pose === 'rear' || a.pose === 'fight') && age >= 5) id = 'maleRear';
-    return { id, coat, collar: ind.sex === 'M' && ind.base.tactic === 'S' && age >= 4 };
+    return { id, coat, collar: ind.sex === 'M' && ind.base.tactic === 'S' && age >= 4, grow: this.growFor(ind, id) };
   }
 
   update(dtMs: number): void {
@@ -544,6 +581,7 @@ export class Scene {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.kind === 'dust') p.vy += 20 * dt;
+      if (p.kind === 'splash' || p.kind === 'blood') p.vy += 60 * dt;
     }
     this.gauges = this.gauges.filter((g) => this.now < g.until);
     for (const g of this.gulls) {
@@ -554,10 +592,17 @@ export class Scene {
         g.y = 50 + Math.random() * 130;
       }
     }
-    if (this.orca) {
-      this.orca.x += this.orca.dir * 14 * dt;
-      if (this.orca.x < -20 || this.orca.x > VIEW_W + 20) this.orca = null;
+    for (const o of this.orcas) {
+      if (this.now < o.start) continue;
+      o.x += o.dir * 70 * dt;
+      if (!o.splashed && (o.dir > 0 ? o.x >= o.targetX : o.x <= o.targetX)) {
+        o.splashed = true;
+        o.diveUntil = this.now + 700;
+        this.burst(o.x, o.y - 2, 'splash', 10);
+        this.burst(o.x, o.y - 1, 'blood', 2);
+      }
     }
+    this.orcas = this.orcas.filter((o) => o.x > -30 && o.x < VIEW_W + 30);
   }
 
   draw(): void {
@@ -580,6 +625,9 @@ export class Scene {
       if (p.kind === 'dust') {
         ctx.fillStyle = (p.until - this.now) > 250 ? P.sand0 : P.gray0;
         ctx.fillRect(Math.round(p.x), Math.round(p.y), 2, 2);
+      } else if (p.kind === 'splash' || p.kind === 'blood') {
+        ctx.fillStyle = p.kind === 'blood' ? P.red0 : (p.until - this.now) > 300 ? P.white : P.cyan;
+        ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
       } else {
         const ic = getIcon(icon);
         ctx.drawImage(ic, Math.round(p.x - ic.width / 2), Math.round(p.y));
@@ -629,21 +677,24 @@ export class Scene {
       ctx.fillStyle = y < 20 ? P.blue1 : P.cyan;
       ctx.fillRect(x, y, 3, 1);
     }
-    // シャチの背びれ
-    if (this.orca) {
-      const ox = Math.round(this.orca.x);
-      const oy = Math.round(this.orca.y + Math.sin(t * 2) * 1);
+    // シャチの背びれ（潜っている間は見えない）
+    for (const o of this.orcas) {
+      if (this.now < o.start || this.now < o.diveUntil) continue;
+      const ox = Math.round(o.x);
+      const oy = Math.round(o.y + Math.sin(t * 3 + o.targetX) * 1);
       ctx.fillStyle = P.ink;
-      for (let k = 0; k < 6; k++) ctx.fillRect(ox + (this.orca.dir > 0 ? k : -k) * 0.5, oy - k, 2, 1);
-      ctx.fillRect(ox - 3, oy, 8, 1);
+      for (let k = 0; k < 7; k++) ctx.fillRect(ox - Math.round(k * 0.5 * o.dir), oy - k, 2, 1);
+      ctx.fillRect(ox - 4, oy, 9, 1);
       ctx.fillStyle = P.white;
-      ctx.fillRect(ox + (this.orca.dir > 0 ? 4 : -3), oy, 2, 1);
+      ctx.fillRect(ox + (o.dir > 0 ? 3 : -4), oy, 2, 1);
+      ctx.fillStyle = P.cyan;
+      ctx.fillRect(ox - 6 * o.dir, oy + 1, 3, 1);
     }
   }
 
   private drawActor(a: Actor, ind: Individual, t: number): void {
     const ctx = this.ctx;
-    const { id, coat, collar } = this.spriteFor(ind, a);
+    const { id, coat, collar, grow } = this.spriteFor(ind, a);
     const frame: 0 | 1 = a.moving ? (Math.floor(t * 5 + a.id) % 2 as 0 | 1) : 0;
     const sp = getSprite(id, {
       coat,
@@ -651,6 +702,7 @@ export class Scene {
       scars: ind.sex === 'M' && this.world.age(ind) >= 8 && ind.base.tactic === 'R' && (ind.lifetime.fightsWon > 1 || ind.injury > 0.2),
       frame,
       flip: a.flip,
+      grow,
     });
     let x = Math.round(a.x - sp.width / 2);
     const y = Math.round(a.y - sp.height + 2);
@@ -680,8 +732,8 @@ export class Scene {
   private drawMarkers(a: Actor, ind: Individual, t: number): void {
     const ctx = this.ctx;
     const w = this.world;
-    const { id } = this.spriteFor(ind, a);
-    const { h: sh } = spriteSize(id);
+    const { id, grow } = this.spriteFor(ind, a);
+    const { h: sh } = spriteSize(id, grow);
     const top = Math.round(a.y - sh + 1);
     const cx = Math.round(a.x);
     let markY = top - 2;
@@ -763,8 +815,8 @@ export class Scene {
       if (a.dying) continue;
       const ind = this.world.get(a.id);
       if (!ind) continue;
-      const { id } = this.spriteFor(ind, a);
-      const { w, h } = spriteSize(id);
+      const { id, grow } = this.spriteFor(ind, a);
+      const { w, h } = spriteSize(id, grow);
       const x0 = a.x - w / 2;
       const y0 = a.y - h + 2;
       if (vx >= x0 && vx < x0 + w && vy >= y0 && vy < a.y + 2 && a.y > bestY) {

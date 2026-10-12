@@ -86,7 +86,8 @@ class Game implements GameView {
       if (this.mode === 'title') {
         if (w.day >= BREED_DAYS) {
           w.endBreedingSeason();
-          w.forage();
+          const rep = w.forage();
+          this.scene.playOrcaAttacks(rep.deaths.filter((d) => d.cause === 'orca').length);
           w.startBreedingSeason();
         }
         const gen = w.runDay();
@@ -124,6 +125,12 @@ class Game implements GameView {
     const strategy = await this.showSeasonReport(summary);
     const rep = w.forage(strategy);
     this.trackBest();
+    // 沖でのシャチの襲撃を見せてから報告を出す
+    const kills = rep.deaths.filter((d) => d.cause === 'orca').length;
+    if (kills > 0) {
+      this.scene.playOrcaAttacks(kills);
+      await new Promise((r) => setTimeout(r, Math.min(4500, 1800 + kills * 450)));
+    }
     await this.showForageReport(rep, strategy);
     if (rep.playerDied) {
       const ok = await this.chooseHeir();
@@ -442,10 +449,11 @@ class Game implements GameView {
     const w = this.world;
     const age = w.age(ind);
     if (age === 0) return `${ind.name}（子・${ind.sex === 'M' ? 'オス' : 'メス'}）`;
-    if (ind.sex === 'F') return `${ind.name}（メス ${age}歳）`;
+    if (ind.sex === 'F') return `${ind.name}（メス ${age}歳・${Math.round(bodyMass(ind, w.year))}kg）`;
     if (ind.base.tactic === 'F' && ind.id !== w.playerId) return `${ind.name}（メス？ ${age}歳）`;
     const s = w.slotOf(ind);
-    return `${ind.name}（オス ${age}歳）${s !== null ? ` 主・メス${w.slotFemales(s).length}頭` : ''}`;
+    const size = `${Math.round(bodyMass(ind, w.year))}kg・ホコ${hokoDisplay(ind, w.year).toFixed(0)}cm`;
+    return `${ind.name}（オス ${age}歳・${size}）${s !== null ? ` 主・メス${w.slotFemales(s).length}頭` : ''}`;
   }
 
   refresh(): void {
@@ -723,12 +731,13 @@ class Game implements GameView {
     const notable = rep.deaths.filter((d) => d.dynasty > 0 && d.age > 0);
     const pupDeaths = rep.deaths.filter((d) => d.dynasty > 0 && d.age === 0).length;
     const total = rep.deaths.length;
+    const orcaKills = rep.deaths.filter((d) => d.cause === 'orca').length;
     return ask<void>((done) =>
       h(
         'div',
         null,
         h('h2', null, '採餌期が過ぎた'),
-        h('div', null, `海で${strategy === 'cautious' ? '慎重に' : strategy === 'greedy' ? '貪欲に' : ''}食べて過ごした一年。群れでは${total}頭が命を落とした。`),
+        h('div', null, `海で${strategy === 'cautious' ? '慎重に' : strategy === 'greedy' ? '貪欲に' : ''}食べて過ごした一年。群れでは${total}頭が命を落とした。${orcaKills ? `うち${orcaKills}頭はシャチに襲われた。` : ''}`),
         rep.playerDied
           ? h('div', { class: 'thought', style: 'color:#e43b44' }, `${w.get(w.playerId)!.name}は${causeLabel(rep.playerCause!)}で世を去った。`)
           : p
