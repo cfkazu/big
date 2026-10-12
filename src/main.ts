@@ -37,6 +37,7 @@ class Game implements GameView {
   tab: Tab = 'selected';
   selectedId: number | null = null;
   logFilter: LogKind | 'all' = 'all';
+  logPinned = true;
   private stepping = false;
   private dayClock = 0;
   private last = performance.now();
@@ -266,11 +267,11 @@ class Game implements GameView {
       const list = h('div', { class: 'list' });
       for (const t of targets) {
         const m = w.get(t.id)!;
-        const ratio = t.perceived / myHoko;
         // 差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合い（体重・脂肪・主の粘り）で決まる
-        const odds = w.fightOdds(p, m, false, t.isHolder);
+        const v = w.challengeVerdict(m);
+        const oddsText = `勝ち目${Math.round(v.odds * 10)}割`;
         const verdict =
-          ratio > 1.12 ? '見せ合いで負けそう' : ratio < 0.9 ? '見せ合いで勝てそう' : odds > 0.6 ? '組めば勝てそう' : odds < 0.4 ? '組めば不利' : '五分';
+          v.kind === 'displayLose' ? '見せ合いで負けそう' : v.kind === 'displayWin' ? '見せ合いで勝てそう' : `組み合いに・${oddsText}`;
         list.append(
           h(
             'button',
@@ -287,7 +288,7 @@ class Game implements GameView {
         null,
         h('h2', null, '誰に挑む？'),
         h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm。相手の大きさは見た目の推定で、多少の見誤りがある。主に勝てば、その浜とハーレムを奪える。ただし浜の主は守りに入ると手強い。`),
-        h('div', { class: 'sub' }, `あなたの体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。ホコの差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合いになって体重と脂肪がものを言う。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。`),
+        h('div', { class: 'sub' }, `あなたの体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。ホコの差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合いになって体重と脂肪がものを言う。浜の主は簡単には引かないので、見せ合いで勝つには 2 割ほど大きいホコが要る。取っ組み合いでも主は粘る。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。`),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );
@@ -695,6 +696,13 @@ class Game implements GameView {
         ),
         h('div', { class: 'sub' }, `精巣 ${Math.round(c.base.testis)}g・体重 ${Math.round(c.base.body)}kg（成熟時）・${temper}${bold ? '・' + bold : ''}`),
         compact ? null : h('div', { class: 'sub' }, `活力 ${Math.round(c.base.vigor * 100)}%　母 ${mother?.name ?? '不明'}／父 ${father?.name ?? '不明'}`),
+        compact
+          ? null
+          : h(
+              'div',
+              { class: 'note' },
+              `いま：${w.slotOf(c) !== null ? `浜の主（メス${w.slotFemales(w.slotOf(c)!).length}頭）` : w.age(c) < 4 ? 'まだ子ども' : '浜なし'}・脂肪 ${Math.round(c.condition * 100)}%・来季の張り ${Math.round(hokoFirmness(c, true) * 100)}%`,
+            ),
         compact ? null : h('div', { class: 'sub' }, `いまのホコ ${hokoDisplay(c, y).toFixed(1)}cm・精巣 ${Math.round(testisMass(c, y))}g・体重 ${Math.round(bodyMass(c, y))}kg`),
         note ? h('div', { class: 'note' }, note) : null,
       ),
@@ -714,8 +722,20 @@ class Game implements GameView {
           : p.base.tactic === 'S'
             ? '衛星型のあなたは、白い襟巻きをまとい、主のそばで隙を待つ。'
             : '忍び型のあなたは、メスに似た姿でハーレムに紛れ込む。'),
-        h('div', { style: 'margin-top:6px' }, '時間は止まっている。まず右の欄で今日の方針を選び（迷ったら「うろつく」）、浜のすぐ下の「次の日へ」か「▶ 自動で進める」で日を進めよう。挑まれたときはその場で判断を求められる。'),
-        h('div', { style: 'margin-top:6px' }, '自分より小さいホコの主を見つけたら「挑む…」。浜を奪えばハーレムの主だ。くわしくは右上の「遊び方」。'),
+        h(
+          'div',
+          { style: 'margin-top:6px' },
+          `時間は止まっている。まず自分の欄（スマホでは浜の下）で今日の方針を選び（迷ったら「${p.base.tactic === 'R' ? 'うろつく' : p.base.tactic === 'S' ? '付き従う…' : '紛れ込む…'}」）、浜のすぐ下の「次の日へ」か「▶ 自動」で日を進めよう。${p.base.tactic === 'R' ? '挑まれたときはその場で判断を求められる。' : ''}`,
+        ),
+        h(
+          'div',
+          { style: 'margin-top:6px' },
+          p.base.tactic === 'R'
+            ? `ホコはまだ育つ（素質 ${p.base.hoko.toFixed(1)}cm、7歳ごろに育ちきる）。自分よりはっきり小さいホコの主を見つけたら「挑む…」。浜を奪えばハーレムの主だ。くわしくは右上の「遊び方」。`
+            : p.base.tactic === 'S'
+              ? '喧嘩の多い浜の主に付き従うほど好機が多い。くわしくは右上の「遊び方」。'
+              : '見張りが手一杯の大きな浜ほど見つかりにくい。くわしくは右上の「遊び方」。',
+        ),
         h('div', { class: 'row' }, btn('浜へ', () => done(), 'primary')),
       ),
     );
@@ -764,7 +784,7 @@ class Game implements GameView {
           'ハーレム',
           'メスは浜に着くたびに、どの主のもとにいるかを選び直す。主の魅力（ホコの大きさ、または穏やかさ。好みはメスによる）と浜の居心地で決まる。去年身を寄せた主のもとへは戻りやすく、戻ったメスは最初からよく懐いている。懐きやすさはメスによって違う。',
           '主が見張れるメスの数は脂肪で決まる。見張りを超えて混み合うとメスは窮屈で出ていき、見張りの外のメスはほかのオスとつがってしまう。浜で喧嘩が起きると騒がしくなり、子が踏まれることもあって、メスが去っていく。',
-          '主は繁殖期のあいだ食べずに浜を守るので、日に日に痩せる。脂肪が10%を切ると浜にいられなくなる。',
+          '主は繁殖期のあいだ食べずに浜を守るので、1日に1.1%ずつ、一季で4割以上も痩せる。脂肪が13%を切ると浜にいられなくなる。メスのいない日や発情の近いメスがいない日は「海で食べる」で蓄えよう（「おまかせ」は自分でそうする）。',
         ),
         ...sec(
           '戦略の型',
@@ -827,7 +847,9 @@ class Game implements GameView {
     const line = (k: string, v: string) => h('tr', null, h('td', null, k), h('td', { class: 'r' }, v));
     const outlook = (st: ForageStrategy) => {
       const o = w.forageOutlook(st);
-      return `見込み：脂肪 ${o.delta >= 0 ? '+' : ''}${Math.round(o.delta * 100)}%（来季のホコの張り ${Math.round((0.55 + 0.45 * Math.min(1, Math.max(0, p.condition + o.delta))) * 100)}%）・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
+      const sign = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}`;
+      const range = Math.round(o.lo * 100) === Math.round(o.hi * 100) ? `${sign(o.delta)}%` : `${sign(o.lo)}〜${sign(o.hi)}%`;
+      return `見込み：脂肪 ${range}（来季のホコの張り 約${Math.round((0.55 + 0.45 * Math.min(1, Math.max(0, p.condition + o.delta))) * 100)}%）・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
     };
     return ask<ForageStrategy>((done) => {
       const choice = (key: ForageStrategy, label: string, desc: string) =>
@@ -938,6 +960,7 @@ class Game implements GameView {
 
   private async gameOver(): Promise<void> {
     const w = this.world;
+    this.refresh();
     this.mode = 'over';
     const founder = w.get(w.founderId);
     const descendants = [...w.inds.values()].filter((i) => i.dynasty > 0).length;
@@ -965,7 +988,7 @@ class Game implements GameView {
 function founderBlurb(kind: FounderOption['kind'], ind: Individual): { tag: string; note: string } {
   switch (kind) {
     case 'big':
-      return { tag: '大物・やさしい', note: 'ホコが大きく、見せ合いに強い。最初から主の座を狙える。' };
+      return { tag: '大物・やさしい', note: 'ホコの素質が同年代でいちばん大きい。7歳ごろに育ちきれば、見せ合いで主の座を狙える。' };
     case 'mid':
       return { tag: '並・ふつう', note: '群れの中ほど。相手を選び、駆け引きで浜を取る。' };
     case 'small':

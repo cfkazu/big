@@ -69,8 +69,8 @@ const T: Record<ThoughtKey, Entry> = {
   },
   matedMany: {
     mood: 'love',
-    brash: ['これで{n}頭目。{I}は浜の王だ。'],
-    any: ['今年はもう{n}頭とつがえた。幸せだ。', '{n}頭……さすがに精が尽きてきた。'],
+    brash: ['これで{n}回目。{I}は浜の王だ。'],
+    any: ['今年はもう{n}回つがえた。幸せだ。', '{n}回……さすがに精が尽きてきた。'],
   },
   groomedHoko: {
     mood: 'happy',
@@ -100,11 +100,11 @@ const T: Record<ThoughtKey, Entry> = {
   },
   seasonHappy: {
     mood: 'happy',
-    any: ['今年は{n}頭とつがえた。いい一年だった。', '{n}頭。悪くない。来年もこうありたい。'],
+    any: ['今年は{n}回つがえた。いい一年だった。', '{n}回。悪くない。来年もこうありたい。'],
   },
   seasonSome: {
     mood: 'neutral',
-    any: ['今年は{n}頭。まあ、ぼちぼちだ。', '{n}頭とつがえた。贅沢は言うまい。'],
+    any: ['今年は{n}回。まあ、ぼちぼちだ。', '{n}回つがえた。贅沢は言うまい。'],
   },
   seasonZero: {
     mood: 'sad',

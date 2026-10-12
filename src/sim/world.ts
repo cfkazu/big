@@ -190,6 +190,8 @@ export class World {
   private slotCache: Map<number, Individual[]> | null = null;
   /** 主のとき、おまかせを選んでいるか */
   holderAuto = false;
+  /** 今日の行動をおまかせで決めたか（翌朝またおまかせに戻す） */
+  private autoToday = false;
   /** 今日プレイヤーがなだめた浜 */
   private soothedSlot: number | null = null;
   /** 枠ごとの衛星型の数（メスの居場所選びで使う。日の始めに数える） */
@@ -268,7 +270,8 @@ export class World {
   /** 観察者から見た対象のホコの推定長。測り間違いを含む。 */
   perceivedHoko(observer: Individual, target: Individual): number {
     if (observer.id === target.id) return this.hoko(target);
-    const noise = hashNormal(observer.id, target.id, this.year * 100 + this.day);
+    // 見誤りは相手ごとに一年を通して同じ（見るたびに変わらない）
+    const noise = hashNormal(observer.id, target.id, this.year);
     return this.hoko(target) * (1 + 0.06 * noise);
   }
 
@@ -299,7 +302,8 @@ export class World {
     take(r[0], 'big');
     // 並：群れの平均にいちばん近い者
     const mean = this.herdHokoMean();
-    take([...r].slice(1).sort((a, b) => Math.abs(a.base.hoko - mean) - Math.abs(b.base.hoko - mean))[0], 'mid');
+    const upper = r.slice(1, Math.max(2, Math.floor((r.length * 2) / 3)));
+    take([...upper].sort((a, b) => Math.abs(a.base.hoko - mean) - Math.abs(b.base.hoko - mean))[0], 'mid');
     // 小兵：下位 3 分の 1 の中で、精巣がいちばん大きい者
     const low = r.slice(Math.floor((r.length * 2) / 3));
     take([...low].sort((a, b) => b.base.testis - a.base.testis)[0], 'small');
@@ -490,7 +494,11 @@ export class World {
     const s = this.slotOf(p);
     if (s === null) return { kind: 'roam' };
     const fs = this.slotFemales(s);
-    if (fs.length === 0) return { kind: 'guard' };
+    // メスのいない浜は守っても仕方がない。海で食べて蓄える。
+    if (fs.length === 0) return { kind: 'rest' };
+    // 痩せてきたら、発情の近いメスがいない日に海で食べる
+    const soonEstrus = fs.some((f) => f.estrusStart >= 0 && f.estrusStart + 3 > this.day && f.estrusStart <= this.day + 2);
+    if (p.condition < 0.25 && !soonEstrus) return { kind: 'rest' };
     if (this.slotHarass[s] > 0.6) return { kind: 'soothe' };
     const cap = this.guardCap(p);
     // 見張りの外にいる発情メスがいれば、そばについて他のオスから守る
@@ -713,6 +721,14 @@ export class World {
     const y = this.year;
     const living = this.living().filter((i) => i.onBeach);
 
+    // おまかせなら、今朝の様子を見て今日の行動を決める
+    const pl = this.player;
+    this.autoToday = false;
+    if (pl && this.playerStance.kind === 'auto') {
+      this.autoToday = true;
+      this.playerStance = this.resolveAutoStance(pl);
+      if (this.playerStance.kind !== 'guard') this.pushLog(`おまかせ：${autoLabel(this, this.playerStance)}`, 'player', pl.id);
+    }
     // 1. 日の始まり：絶食による消耗、精子の産生、ツヤの減衰
     for (const ind of living) {
       ind.foughtToday = false;
@@ -760,12 +776,6 @@ export class World {
       }
     }
 
-    // おまかせなら、今朝の様子を見て今日の行動を決める
-    const pl = this.player;
-    if (pl && this.playerStance.kind === 'auto') {
-      this.playerStance = this.resolveAutoStance(pl);
-      if (this.playerStance.kind !== 'guard') this.pushLog(`おまかせ：${autoLabel(this, this.playerStance)}`, 'player', pl.id);
-    }
     // 痩せすぎの警告
     if (pl && pl.onBeach && pl.sex === 'M' && this.age(pl) >= 4 && pl.condition < 0.2 && this.day % 3 === 0) {
       this.pushLog(`脂肪が${Math.round(pl.condition * 100)}%しかない。10%を切ると浜にいられなくなる。「海で食べる」で取り戻そう。`, 'player', pl.id);
@@ -803,7 +813,7 @@ export class World {
 
     // 一頭への働きかけはその日限り。翌日からは浜を守る。
     const pk = this.playerStance.kind;
-    if ((ONE_DAY_HOLDER_STANCES.has(pk) || (this.holderAuto && pk === 'guard')) && this.player) this.playerStance = this.defaultStance(this.player);
+    if ((ONE_DAY_HOLDER_STANCES.has(pk) || this.autoToday) && this.player) this.playerStance = this.defaultStance(this.player);
     this.soothedSlot = null;
 
     this.day++;
@@ -860,6 +870,21 @@ export class World {
         Math.abs(m.elo - a.elo) < 150,
     );
     return peers.length ? this.rng.pick(peers) : undefined;
+  }
+
+  /**
+   * プレイヤーが opp に挑んだときの見立て。勝負と同じ基準で判断する。
+   * 浜の主は簡単には引かず（先住効果）、こちらは主の気迫に押されやすい。相手の気性は分からないので並とみなす。
+   */
+  challengeVerdict(opp: Individual): { kind: 'displayWin' | 'displayLose' | 'fight'; odds: number } {
+    const me = this.player!;
+    const resident = this.slotOf(opp) !== null;
+    const mine = this.hoko(me) * (1 + me.base.hubris);
+    const theirs = this.perceivedHoko(me, opp);
+    const odds = this.fightOdds(me, opp, false, resident);
+    if (theirs / mine > 1.05 + 0.12 * me.base.aggression - (resident ? 0.08 : 0)) return { kind: 'displayLose', odds };
+    if (mine / theirs > 1.11 + (resident ? 0.08 : 0)) return { kind: 'displayWin', odds };
+    return { kind: 'fight', odds };
   }
 
   /** 取っ組み合いで me が勝つ確率。浜の主として受ける側には先住効果が付く。 */
@@ -1537,13 +1562,14 @@ export class World {
   }
 
   /** プレイヤーが採餌の方針を選ぶための見込み（体力の増減と、シャチに襲われる確率） */
-  forageOutlook(strat: ForageStrategy): { delta: number; orca: number } {
+  forageOutlook(strat: ForageStrategy): { delta: number; lo: number; hi: number; orca: number } {
     const p = this.player;
-    if (!p) return { delta: 0, orca: 0 };
+    if (!p) return { delta: 0, lo: 0, hi: 0, orca: 0 };
     const { effort, orcaMul } = FORAGE[strat];
     const { gain, upkeep } = this.forageBudget(p, this.foodNow(), effort);
-    const after = Math.min(1, Math.max(0, p.condition + gain - upkeep));
-    return { delta: after - p.condition, orca: this.orcaRisk(p, orcaMul, after) };
+    // 餌の当たり外れで、食べられる量は ±15% ぶれる
+    const after = (k: number) => Math.min(1, Math.max(0, p.condition + gain * k - upkeep));
+    return { delta: after(1) - p.condition, lo: after(0.85) - p.condition, hi: after(1.15) - p.condition, orca: this.orcaRisk(p, orcaMul, after(1)) };
   }
 
   forage(playerStrategy: ForageStrategy = 'normal'): ForageReport {
@@ -1800,6 +1826,7 @@ function autoLabel(w: World, s: Stance): string {
     case 'escort': return `見張りの外にいる発情中の${name(s.femaleId)}に寄り添う`;
     case 'tend': return `機嫌の悪い${name(s.femaleId)}を毛づくろいしてやる`;
     case 'groom': return `${name(s.femaleId)}に${GROOM_LABEL[s.type]}をさせる`;
+    case 'rest': return 'メスがいないか発情の近いメスがいないので、海で食べて蓄える';
     default: return '浜を守る';
   }
 }

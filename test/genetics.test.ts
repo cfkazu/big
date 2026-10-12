@@ -312,3 +312,40 @@ describe('きのうのできごと', () => {
     expect(w.playerDigest().some((t) => t.includes(f.name) && t.includes('ホコの手入れ'))).toBe(true);
   });
 });
+
+describe('見立てとおまかせ', () => {
+  it('浜の主に見せ合いで勝つと見立てるのは、ホコがはっきり大きいときだけ', () => {
+    const w = World.create(51, 30);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    const holder = w.get(w.slotHolders.find((id) => id != null && id !== p.id)!)!;
+    for (const t of w.challengeTargets()) {
+      const v = w.challengeVerdict(w.get(t.id)!);
+      const ratio = (w.hoko(p) * (1 + p.base.hubris)) / t.perceived;
+      if (v.kind === 'displayWin') expect(ratio).toBeGreaterThan(t.isHolder ? 1.19 : 1.11);
+    }
+    expect(w.challengeVerdict(holder).odds).toBeGreaterThanOrEqual(0);
+  });
+
+  it('おまかせの主は、メスがいなければ海で食べ、翌日はおまかせに戻る', () => {
+    const w = World.create(52, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    const old = w.get(w.slotHolders[0]);
+    if (old) old.slot = null;
+    w.slotHolders[0] = p.id;
+    p.slot = 0;
+    for (const f of w.living()) if (f.slot === 0 && f.sex === 'F') f.slot = null;
+    (w as unknown as { invalidateSlots(): void }).invalidateSlots();
+    for (const m of w.living()) if (m.sex === 'M' && m.id !== p.id) m.lastLossDay = w.day;
+    p.condition = 0.4;
+    w.setPlayerStance({ kind: 'auto' });
+    const g = w.runDay();
+    let r = g.next();
+    while (!r.done) r = g.next('accept');
+    expect(p.condition).toBeGreaterThan(0.4);
+    expect(w.playerStance.kind).toBe('auto');
+  });
+});

@@ -23,6 +23,8 @@ export interface GameView {
   tab: Tab;
   selectedId: number | null;
   logFilter: LogKind | 'all';
+  /** ログを最新に追従させるか（読み返すために上へスクロールしたら外れる） */
+  logPinned: boolean;
   select(id: number | null): void;
   setTab(t: Tab): void;
   setLogFilter(f: LogKind | 'all'): void;
@@ -507,8 +509,7 @@ export function renderSide(g: GameView, root: HTMLElement): void {
 }
 
 export function renderLog(g: GameView, root: HTMLElement): void {
-  const entries = root.querySelector<HTMLElement>('.entries');
-  const atBottom = !entries || entries.scrollHeight - entries.scrollTop - entries.clientHeight < 24;
+  const prevTop = root.querySelector<HTMLElement>('.entries')?.scrollTop ?? 0;
   clear(root);
   const f = (k: LogKind | 'all', label: string) => btn(label, () => g.setLogFilter(k), `small ${g.logFilter === k ? 'on' : ''}`);
   root.append(h('div', { class: 'filters' }, f('all', 'すべて'), f('player', '自分'), f('dynasty', '一族'), f('thought', 'つぶやき'), f('event', '浜')));
@@ -527,5 +528,8 @@ export function renderLog(g: GameView, root: HTMLElement): void {
     );
   }
   root.append(list);
-  if (atBottom) list.scrollTop = list.scrollHeight;
+  list.scrollTop = g.logPinned ? list.scrollHeight : prevTop;
+  list.addEventListener('scroll', () => {
+    g.logPinned = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
+  });
 }
