@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "balance": "vite-node scripts/balance.ts"
+    "balance": "vite-node scripts/balance.ts",
+    "autoplay": "node scripts/autoplay.mjs ."
   },
   "devDependencies": {
     "@types/node": "^22.15.3",

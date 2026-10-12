@@ -146,6 +146,8 @@ export class World {
   slotHarass: number[] = [];
   playerId: number | null = null;
   founderId: number | null = null;
+  /** 初代を選んだ年（表示上の 1 年目） */
+  startYear = 0;
   generation = 1;
   playerStance: Stance = { kind: 'roam' };
   log: LogEntry[] = [];
@@ -169,6 +171,7 @@ export class World {
     const w = new World(seed);
     w.seedPopulation();
     for (let y = 0; y < burnInYears; y++) w.simulateYearAuto();
+    w.day = 0;
     w.log = [];
     w.history = w.history.slice(-1);
     return w;
@@ -234,9 +237,9 @@ export class World {
 
   // ───────────────────────── プレイヤー ─────────────────────────
 
-  /** 初代の候補：4〜6 歳のオスから 3 頭（主型を 2 頭以上） */
+  /** 初代の候補：6〜7 歳の若いオスから 3 頭（主型を 2 頭以上） */
   founderCandidates(): Individual[] {
-    const males = this.rng.shuffle(this.living().filter((i) => i.sex === 'M' && this.age(i) >= 4 && this.age(i) <= 6));
+    const males = this.rng.shuffle(this.living().filter((i) => i.sex === 'M' && this.age(i) >= 6 && this.age(i) <= 7 && this.slotOf(i) === null));
     const r = males.filter((m) => m.base.tactic === 'R');
     const other = males.filter((m) => m.base.tactic !== 'R');
     const picks = r.slice(0, other.length > 0 ? 2 : 3);
@@ -251,6 +254,9 @@ export class World {
     if (asFounder) {
       this.founderId = id;
       this.generation = 1;
+      this.startYear = this.year;
+      p.condition = Math.max(p.condition, 0.7);
+      p.injury = 0;
       // 初代がすでに残している子孫も含めて、家系図から血統の割合を計算し直す（ID は生まれ順）
       const ordered = [...this.inds.values()].sort((a, b) => a.id - b.id);
       for (const i of ordered) {
@@ -283,11 +289,45 @@ export class World {
     return ind.fatherId === this.playerId;
   }
 
+  /** 当主不在のまま年を進め、血を引くオスが生まれるのを待つ。経過年数を返す。 */
+  waitForHeir(maxYears: number): number {
+    const keepPlayer = this.playerId;
+    this.playerId = null;
+    let n = 0;
+    while (n < maxYears && this.heirCandidates().length === 0 && this.living().some((i) => i.dynasty > 0)) {
+      this.simulateYearAuto();
+      n++;
+    }
+    this.playerId = keepPlayer;
+    return n;
+  }
+
   defaultStance(p: Individual): Stance {
     if (p.base.tactic === 'S') return { kind: 'follow', slot: this.bestSlotBySize() };
     if (p.base.tactic === 'F') return { kind: 'infiltrate', slot: this.bestSlotBySize() };
     if (this.slotOf(p) !== null) return { kind: 'guard' };
     return { kind: 'roam' };
+  }
+
+  displayYear(y = this.year): number {
+    return y - this.startYear + 1;
+  }
+
+  setPlayerStance(s: Stance): void {
+    this.playerStance = s;
+    const p = this.player;
+    if (!p) return;
+    if (s.kind === 'follow' || s.kind === 'infiltrate') p.slot = s.slot;
+  }
+
+  /** 浜にいる主型オス（5 歳以上）の中での序列 */
+  rankOf(ind: Individual): { rank: number; of: number } | null {
+    if (ind.sex !== 'M' || ind.base.tactic !== 'R') return null;
+    const males = this.living()
+      .filter((m) => m.sex === 'M' && m.base.tactic === 'R' && this.age(m) >= 5 && (m.onBeach || this.phase === 'foraging'))
+      .sort((a, b) => b.elo - a.elo);
+    const idx = males.findIndex((m) => m.id === ind.id);
+    return idx < 0 ? null : { rank: idx + 1, of: males.length };
   }
 
   canAct(p: Individual): boolean {
@@ -448,7 +488,7 @@ export class World {
       if (p.base.tactic !== 'R' && (this.playerStance.kind === 'follow' || this.playerStance.kind === 'infiltrate')) {
         p.slot = this.playerStance.slot;
       }
-      this.pushLog(`${this.year}年目の繁殖期が始まった。`, 'event');
+      this.pushLog(`${this.displayYear()}年目の繁殖期が始まった。`, 'event');
     }
   }
 
@@ -469,7 +509,8 @@ export class World {
       ind.shine *= 0.94;
       const holder = ind.sex === 'M' && this.slotOf(ind) !== null;
       let drain: number;
-      if (ind.sex === 'M') drain = holder ? 0.011 : this.age(ind) >= 4 ? 0.0065 : 0.004;
+      // 主は絶食で浜を守る。周辺のオスはときどき海へ出て食べる。
+      if (ind.sex === 'M') drain = holder ? 0.011 : this.age(ind) >= 4 ? 0.0035 : 0.002;
       else drain = ind.pupId ? 0.009 : 0.005;
       if (ind.id === this.playerId && this.playerStance.kind === 'rest') drain *= 0.6;
       ind.condition = Math.max(0, ind.condition - drain);
@@ -497,6 +538,16 @@ export class World {
       }
     }
     this.fillEmptySlots();
+    // 痩せ細った周辺のオスは、浜をあきらめて海へ食べに出る
+    for (const m of living) {
+      if (m.sex !== 'M' || !m.onBeach || this.slotOf(m) !== null || this.age(m) < 4 || m.condition >= 0.1) continue;
+      m.onBeach = false;
+      m.slot = null;
+      if (m.id === this.playerId) {
+        this.pushLog('腹が減って動けない。今季はあきらめて海へ食べに出た。', 'player', m.id);
+        this.think(m, 'abandon', {});
+      }
+    }
 
     // 4. 見せ合いと取っ組み合い
     yield* this.contestPhase();
@@ -1035,7 +1086,9 @@ export class World {
         upkeep += 0.07 * Math.pow(ind.base.hoko / 40, 2) * (age >= 4 ? 1 : 0.3);
         upkeep += 0.05 * (testisMass(ind, this.year) / 350);
       } else if (ind.pregnancy) upkeep += 0.08;
-      const gain = food * effort * (0.7 + 0.3 * ind.base.vigor) * this.rng.range(0.85, 1.15);
+      // 大きな体ほど一度に多く食べられる
+      const intake = ind.sex === 'M' && age >= 4 ? 1.3 : 1;
+      const gain = food * effort * intake * (0.7 + 0.3 * ind.base.vigor) * this.rng.range(0.85, 1.15);
       ind.condition = Math.min(1, Math.max(0, ind.condition + gain - upkeep));
 
       // 死亡
