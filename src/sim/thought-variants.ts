@@ -7,9 +7,10 @@ import type { ThoughtKey } from './thoughts';
  *  hokoFan / gentleFan：メスの好みが、大きなホコ／穏やかなオス
  *  old / young：自分が年寄り／若い
  *  rivalBig / rivalSmall / rivalEven：相手のオスのホコが自分よりはっきり大きい／小さい／ほぼ同じ
+ *  boy / girl：その年生まれの子がオス／メス
  * {other} は相手の名前、{I} は一人称。長さの数字はセリフに入れない（ハマトドは寸法で話さない）。
  */
-export type Tag = 'huge' | 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young' | 'rivalBig' | 'rivalSmall' | 'rivalEven';
+export type Tag = 'huge' | 'big' | 'small' | 'fond' | 'cold' | 'hokoFan' | 'gentleFan' | 'old' | 'young' | 'rivalBig' | 'rivalSmall' | 'rivalEven' | 'boy' | 'girl';
 
 export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>>> = {
   // ─── メスがホコをなめて綺麗にしたとき ───
@@ -36,6 +37,11 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
     small: ['{n}頭だと場所が足りないらしい。……すまん。', '小さいせいか、取り合いになっていた。'],
     old: ['この歳で{n}頭になめてもらえるとはな。'],
     young: ['み、みんなで……！？　心の準備が……！'],
+  },
+  // ─── 母がボスの世話をしているあいだ待つ子 ───
+  pupWaitMom: {
+    boy: ['ぼくもあそびたいのに……。', 'お母さん、まだ？　ぼく、つまんない。', '待ってるあいだに、すもうの練習しよう。えいっ。', 'ぼくもいつか、{other}みたいになるのかな。', 'ぼく、お母さんを守る役。ちゃんと見張ってる。'],
+    girl: ['お母さん、まだかなあ。いい子で待ってよう。', 'わたしも早く大きくなって、お母さんのお手伝いしたいな。', 'お母さん、{other}にやさしいね。', 'となりの子と、貝がら並べてあそぼう。', 'お母さんが終わったら、毛づくろいしてもらうの。'],
   },
   fOrderedOk: {
     big: ['こんなにおっきなホコをなめて綺麗にできて幸せ。', '{other}のホコ、近くで見るとすごい迫力。', 'この大きさ、なめ終わるころには日が沈むわね。'],

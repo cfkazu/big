@@ -486,6 +486,11 @@ describe('子どもたち', () => {
     const wait = said.get('pupWaitMom') ?? [];
     expect(wait.length).toBeGreaterThan(0);
     expect(wait.every((x) => x.age === 0 && !/ホコ|なめ/.test(x.text))).toBe(true);
+    // オスの子とメスの子で言うことが違う
+    expect(wait.some((x) => x.sex === 'M' && x.text.includes('ぼく'))).toBe(true);
+    expect(wait.some((x) => x.sex === 'F' && x.text.includes('わたし'))).toBe(true);
+    expect(wait.some((x) => x.sex === 'M' && x.text.includes('わたし'))).toBe(false);
+    expect(wait.some((x) => x.sex === 'F' && x.text.includes('ぼく'))).toBe(false);
     expect(help.length).toBeGreaterThan(0);
     expect(envy.length).toBeGreaterThan(0);
     expect(help.every((x) => x.sex === 'F' && x.age === 0)).toBe(true);

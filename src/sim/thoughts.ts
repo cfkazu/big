@@ -337,6 +337,7 @@ export interface Situation {
 const SIZE: Tag[] = ['huge', 'big', 'small'];
 const AGE: Tag[] = ['old', 'young'];
 const HER: Tag[] = ['fond', 'cold', 'hokoFan', 'gentleFan'];
+const SEX: Tag[] = ['boy', 'girl'];
 const RIVAL: Tag[] = ['rivalBig', 'rivalEven', 'rivalSmall'];
 /** オスについて話すメス */
 const F_ABOUT_M: Tag[] = [...SIZE, ...HER];
@@ -398,10 +399,10 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   fGaveBirth: sit('子を産んだメス', 'メス', '子', HER),
   fBigPup: sit('大物の子を産んだメス', 'メス', '子', HER),
   fPupLost: sit('子を喧嘩で亡くしたメス', 'メス', null, HER),
-  pupIdle: sit('子どものひとりごと', '子ども・冬', null, []),
-  pupMilk: sit('乳を飲む子ども', '子ども・冬', null, []),
+  pupIdle: sit('子どものひとりごと', '子ども・冬', null, SEX),
+  pupMilk: sit('乳を飲む子ども', '子ども・冬', null, SEX),
   pupHelpGroom: sit('母のまねで世話を手伝う子（メス）', '子ども・冬', 'ボス', []),
-  pupWaitMom: sit('母がボスの世話をしているあいだ待つ子', '子ども・冬', 'ボス', []),
+  pupWaitMom: sit('母がボスの世話をしているあいだ待つ子', '子ども・冬', 'ボス', SEX),
   youngEnvy: sit('主をうらやむ子・若いオス', '子ども・冬', '主', []),
   orcaEscape: sit('シャチから逃げた', '子ども・冬', null, [...SIZE, ...AGE]),
   fat: sit('冬によく太った', '子ども・冬', null, [...SIZE, ...AGE]),
@@ -421,6 +422,8 @@ export const TAG_LABEL: Record<Tag, string> = {
   rivalBig: '相手のほうが大きい',
   rivalEven: '相手と互角',
   rivalSmall: '相手のほうが小さい',
+  boy: 'オスの子',
+  girl: 'メスの子',
 };
 
 // ─────────────────────────────────────────────

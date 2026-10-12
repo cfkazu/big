@@ -1883,6 +1883,8 @@ export class World {
       if (female.base.pref > 0.62) tags.push('hokoFan');
       else if (female.base.pref < 0.38) tags.push('gentleFan');
     }
+    // その年生まれの子は、オスの子かメスの子か
+    if (this.age(ind) === 0) tags.push(ind.sex === 'M' ? 'boy' : 'girl');
     if (ind.sex === 'M') {
       const age = this.age(ind);
       if (age >= 12) tags.push('old');
