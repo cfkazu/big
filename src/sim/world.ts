@@ -672,7 +672,7 @@ export class World {
         h.onBeach = false;
         this.dayEvents.push({ kind: 'abandon', maleId: h.id, slot: s });
         this.think(h, 'abandon', {});
-        if (h.id === this.playerId) this.pushLog('体力が尽きた。ハーレムを捨てて海へ帰った。', 'player', h.id);
+        if (h.id === this.playerId) this.pushLog('脂肪が尽きた。ハーレムを捨てて海へ帰った。', 'player', h.id);
       } else if (h.condition < 0.25 && this.rng.chance(0.15)) {
         this.think(h, 'hungry', {});
       }
@@ -697,7 +697,7 @@ export class World {
     }
     // 痩せすぎの警告
     if (pl && pl.onBeach && pl.sex === 'M' && this.age(pl) >= 4 && pl.condition < 0.2 && this.day % 3 === 0) {
-      this.pushLog(`体力が${Math.round(pl.condition * 100)}%しかない。10%を切ると浜にいられなくなる。「海で食べる」で取り戻そう。`, 'player', pl.id);
+      this.pushLog(`脂肪が${Math.round(pl.condition * 100)}%しかない。10%を切ると浜にいられなくなる。「海で食べる」で取り戻そう。`, 'player', pl.id);
     }
 
     // 4. 見せ合いと取っ組み合い

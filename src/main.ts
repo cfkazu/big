@@ -1,7 +1,7 @@
 import '@fontsource/dotgothic16';
 import './style.css';
 import { Scene, VIEW_H, VIEW_W } from './render/scene';
-import { bodyMass, hokoDisplay, tacticLabel, testisMass, type Individual } from './sim/individual';
+import { bodyMass, hokoDisplay, hokoFirmness, tacticLabel, testisMass, type Individual } from './sim/individual';
 import {
   BREED_DAYS,
   World,
@@ -267,7 +267,7 @@ class Game implements GameView {
       for (const t of targets) {
         const m = w.get(t.id)!;
         const ratio = t.perceived / myHoko;
-        // 差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合い（体重・体力・主の粘り）で決まる
+        // 差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合い（体重・脂肪・主の粘り）で決まる
         const odds = w.fightOdds(p, m, false, t.isHolder);
         const verdict =
           ratio > 1.12 ? '見せ合いで負けそう' : ratio < 0.9 ? '見せ合いで勝てそう' : odds > 0.6 ? '組めば勝てそう' : odds < 0.4 ? '組めば不利' : '五分';
@@ -287,7 +287,7 @@ class Game implements GameView {
         null,
         h('h2', null, '誰に挑む？'),
         h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm。相手の大きさは見た目の推定で、多少の見誤りがある。主に勝てば、その浜とハーレムを奪える。ただし浜の主は守りに入ると手強い。`),
-        h('div', { class: 'sub' }, `あなたの体重 ${Math.round(bodyMass(p, w.year))}kg・体力 ${Math.round(p.condition * 100)}%。ホコの差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合いになって体重と体力がものを言う。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。`),
+        h('div', { class: 'sub' }, `あなたの体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。ホコの差がはっきりしていれば見せ合いで決まり、僅差なら取っ組み合いになって体重と脂肪がものを言う。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。`),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );
@@ -453,7 +453,7 @@ class Game implements GameView {
           h('h3', null, '世話をさせる'),
           groom('hoko', 'ホコの手入れ', `ツヤが出て見せ合いで有利に。いまのツヤ +${Math.round(p.shine * 100)}%`),
           groom('wound', '傷の手当て', `傷が癒える。いまのケガ ${Math.round(p.injury * 100)}%`),
-          groom('fur', '毛づくろい', '少し体力が戻る。機嫌の悪いメスは嫌がる。'),
+          groom('fur', '毛づくろい', '少し脂肪が戻る。機嫌の悪いメスは嫌がる。'),
         ),
         h('div', { class: 'sub', style: 'margin-top:6px' }, 'どれもその日限り。一頭にかかりきりの日は、ほかのメスへの見張りが手薄になる。'),
         h('div', { class: 'row' }, canGoBack ? btn('一覧へ戻る', () => done('back')) : null, btn('やめる', () => done(null))),
@@ -609,7 +609,7 @@ class Game implements GameView {
         { class: 'entries' },
         ...[
           'オスはホコを見せ合い、小さい方が引く。僅差なら取っ組み合い。',
-          '主が見張れるメスの数は、その日の体力しだい。',
+          '主が見張れるメスの数は、その日の脂肪しだい。',
           '騒がしい浜、狭い浜からは、メスが去っていく。',
           'メスは一度の発情で何頭ともつがいうる。父を決めるのは精子のくじ引き。',
           '大きなホコは、海ではシャチの的になる。',
@@ -735,26 +735,32 @@ class Game implements GameView {
           '選んだ方針は「今日の予定」に出て、日を進めたときに実行される。「守る」「おまかせ」「うろつく」「海で食べる」は変えるまで毎日続く。「挑む」と「メスに構う」はその日限りで、翌日は元の方針に戻る。',
           '挑む…：ほかのオスに勝負を挑む（5歳から）。浜の主に勝てば、その浜とハーレムを奪える。',
           'うろつく：見張りの外にいるメスをうかがう。主でなくても交尾の機会がある。',
-          '海で食べる：浜を離れて食べ、体力を取り戻す。主がこれを選ぶと、その日はほとんど見張れない。',
+          '海で食べる：浜を離れて食べ、脂肪を取り戻す。主がこれを選ぶと、その日はほとんど見張れない。',
           '守る（主のみ）：見張れるメスが1.3倍に増え、取っ組み合いでも粘る。',
           'おまかせ（主のみ）：毎朝ハーレムの様子を見て、守る・なだめる・機嫌の悪いメスに構う・見張りの外の発情メスに寄り添う、を自動で選ぶ。',
           'メスに構う…（主のみ）：ハーレム全体をなだめる、一頭とつがう・毛づくろいしてあげる・寄り添って守る・世話（ホコの手入れ／傷の手当て／毛づくろい）をさせる。',
         ),
         ...sec(
           '序列と勝負',
-          'オス同士はまずホコを見せ合う。差がはっきりしていれば小さい方が引く。僅差なら取っ組み合いになり、体重・体力・気性で決まる。浜の主は守りに入ると手強い（先住効果）。',
+          'オス同士はまずホコを見せ合う。差がはっきりしていれば小さい方が引く。僅差なら取っ組み合いになり、体重・脂肪・気性で決まる。浜の主は守りに入ると手強い（先住効果）。',
           '挑まれたら「受けて立つ」か「引く」を選ぶ。引けばケガはしないが負けで、主なら浜を明け渡す。上の「判断」を「気質任せ」にすると、勝負の判断を自分の気性に任せて止まらずに進む。',
           '「序列」は見せ合いと取っ組み合いの戦績から決まる順位。勝つと上がり、負けると下がる。',
         ),
         ...sec(
           'ホコの大きさ',
-          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの太り具合が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。ハーレムのメスにホコの手入れをしてもらうとツヤが出て、その分だけ大きく見える。12歳を過ぎると少しずつ縮む。',
+          '素質（遺伝子で決まり、7歳まで育つ）に、繁殖期の始まりの脂肪で決まる「張り」が掛かる。痩せて浜に来るとホコの張りもなく、見せ合いで不利になる。繁殖期の途中で痩せても、張りはその季節のあいだ変わらない。ハーレムのメスにホコの手入れをしてもらうとツヤが出て、その分だけ大きく見える。12歳を過ぎると少しずつ縮む。',
+        ),
+        ...sec(
+          '脂肪',
+          '「脂肪」は体の蓄え。採餌期に食べて太り、繁殖期には日に日に痩せる（主は絶食するので特に）。「海で食べる」日は少し戻る。',
+          '脂肪が多いほど：繁殖期の始まりにホコが張る（痩せきっていると素質の55%、まるまる太れば100%）。取っ組み合いの力が出る。主なら見張れるメスが増える。精子がよく作られる。浜に長くいられる。冬に飢えにくく、シャチからも逃げやすい。太りすぎて困ることはない。',
+          'メスも太っているほど身ごもりやすく、子が丈夫に育つ。',
         ),
         ...sec(
           'ハーレム',
           'メスは浜に着くたびに、どの主のもとにいるかを選び直す。主の魅力（ホコの大きさ、または穏やかさ。好みはメスによる）と浜の居心地で決まる。去年身を寄せた主のもとへは戻りやすく、戻ったメスは最初からよく懐いている。懐きやすさはメスによって違う。',
-          '主が見張れるメスの数は体力で決まる。見張りを超えて混み合うとメスは窮屈で出ていき、見張りの外のメスはほかのオスとつがってしまう。浜で喧嘩が起きると騒がしくなり、子が踏まれることもあって、メスが去っていく。',
-          '主は繁殖期のあいだ食べずに浜を守るので、日に日に痩せる。体力が10%を切ると浜にいられなくなる。',
+          '主が見張れるメスの数は脂肪で決まる。見張りを超えて混み合うとメスは窮屈で出ていき、見張りの外のメスはほかのオスとつがってしまう。浜で喧嘩が起きると騒がしくなり、子が踏まれることもあって、メスが去っていく。',
+          '主は繁殖期のあいだ食べずに浜を守るので、日に日に痩せる。脂肪が10%を切ると浜にいられなくなる。',
         ),
         ...sec(
           '戦略の型',
@@ -785,7 +791,7 @@ class Game implements GameView {
       const desc =
         pr.kind === 'challenged'
           ? `受けて立つ：ホコを見せ合う。差がはっきりすれば小さい方が引き、僅差ならもう一度、取っ組み合うかを選べる。引く：戦わずに負け${lose ? '、浜とハーレムを明け渡す' : '。ケガはしない'}。`
-          : `見せ合いでは決着がつかない。取っ組み合う：体格と体力がものを言い、負ければ深手を負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
+          : `見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければ深手を負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
       return h(
         'div',
         null,
@@ -798,7 +804,7 @@ class Game implements GameView {
           h('div', { class: 'vs' }, 'VS'),
           h('div', { class: 'side' }, portrait(opp, w, { rear: true }), h('div', { class: 'name' }, opp.name), ruler(pr.perceivedOpp, 'opp'), h('div', null, `推定 ${pr.perceivedOpp.toFixed(1)}cm`), pr.kind === 'escalate' ? h('div', { class: 'sub' }, `体重 ${Math.round(pr.oppBody)}kg`) : null),
         ),
-        h('div', { class: 'sub' }, `相手の${opp.base.aggression > 0.62 ? '目は血走っている' : opp.base.aggression < 0.38 ? '様子は落ち着いている' : '出方はわからない'}。あなたの体力 ${Math.round(p.condition * 100)}%・ケガ ${Math.round(p.injury * 100)}%`),
+        h('div', { class: 'sub' }, `相手の${opp.base.aggression > 0.62 ? '目は血走っている' : opp.base.aggression < 0.38 ? '様子は落ち着いている' : '出方はわからない'}。あなたの脂肪 ${Math.round(p.condition * 100)}%・ケガ ${Math.round(p.injury * 100)}%`),
         pr.kind === 'escalate' ? h('div', { class: 'name' }, `取っ組み合いの勝ち目：およそ${Math.round(pr.winChance * 10)}割`) : null,
         h(
           'div',
@@ -817,7 +823,7 @@ class Game implements GameView {
     const line = (k: string, v: string) => h('tr', null, h('td', null, k), h('td', { class: 'r' }, v));
     const outlook = (st: ForageStrategy) => {
       const o = w.forageOutlook(st);
-      return `見込み：体力 ${o.delta >= 0 ? '+' : ''}${Math.round(o.delta * 100)}%・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
+      return `見込み：脂肪 ${o.delta >= 0 ? '+' : ''}${Math.round(o.delta * 100)}%（来季のホコの張り ${Math.round((0.55 + 0.45 * Math.min(1, Math.max(0, p.condition + o.delta))) * 100)}%）・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
     };
     return ask<ForageStrategy>((done) => {
       const choice = (key: ForageStrategy, label: string, desc: string) =>
@@ -835,7 +841,7 @@ class Game implements GameView {
           line('見せ合い', `${s.playerDisplays[0]}勝${s.playerDisplays[1]}敗`),
           line('取っ組み合い', `${s.playerFights[0]}勝${s.playerFights[1]}敗`),
           line('あなたの子を宿したメス', `${s.playerConceptions}頭（群れ全体で${s.conceptions}頭）`),
-          line('体力', `${Math.round(p.condition * 100)}%`),
+          line('脂肪', `${Math.round(p.condition * 100)}%`),
         ),
         h('h3', null, '採餌期の過ごし方'),
         h(
@@ -865,7 +871,7 @@ class Game implements GameView {
         rep.playerDied
           ? h('div', { class: 'thought', style: 'color:#e43b44' }, `${w.get(w.playerId)!.name}は${causeLabel(rep.playerCause!)}で世を去った。`)
           : p
-            ? h('div', { class: 'sub' }, `体力 ${rep.conditionDelta >= 0 ? '+' : ''}${Math.round(rep.conditionDelta * 100)}% → ${Math.round(p.condition * 100)}%`)
+            ? h('div', { class: 'sub' }, `脂肪 ${rep.conditionDelta >= 0 ? '+' : ''}${Math.round(rep.conditionDelta * 100)}% → ${Math.round(p.condition * 100)}%（来季のホコの張り ${Math.round(hokoFirmness(p, true) * 100)}%）`)
             : null,
         notable.length ? h('h3', null, '一族の訃報') : null,
         ...notable.filter((d) => d.id !== w.playerId).slice(0, 8).map((d) => h('div', { class: 'sub' }, `${d.name}（${d.age}歳）…${causeLabel(d.cause)}`)),

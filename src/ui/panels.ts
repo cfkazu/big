@@ -3,6 +3,7 @@ import {
   bodyMass,
   coatLabel,
   hokoDisplay,
+  hokoFirmness,
   spermCapacity,
   tacticLabel,
   testisMass,
@@ -81,10 +82,11 @@ function playerCard(g: GameView): HTMLElement {
   const stats = h(
     'div',
     null,
-    stat('体力', bar(p.condition, 'hp'), pct(p.condition)),
+    stat('脂肪', bar(p.condition, 'hp'), pct(p.condition)),
+    h('div', { class: 'sub fat-note' }, '脂肪が多いほど、来季のホコが張り、取っ組み合いに強く、見張れるメスも増える。'),
     stat('ケガ', bar(p.injury, 'hurt'), p.injury < 0.05 ? 'なし' : pct(p.injury)),
     stat('ホコ', bar(hoko / 70, 'hoko'), `${hoko.toFixed(1)}cm`),
-    stat('　素質', h('span', { class: 'sub' }, age < 7 ? '7歳まで育つ' : '太れば張る'), `${p.base.hoko.toFixed(1)}cm`),
+    stat('　素質', h('span', { class: 'sub' }, `${age < 7 ? '7歳まで育つ・' : ''}張り${Math.round(hokoFirmness(p) * 100)}%`), `${p.base.hoko.toFixed(1)}cm`),
     stat('貯精', bar(spermCap ? sperm / spermCap : 0, 'sperm'), `${Math.round(sperm)}億`),
     stat('序列', h('span', { class: 'sub' }, rank ? `戦績順・${rank.of}頭中` : '―'), rank ? `${rank.rank}位` : '―'),
     stat('ハーレム', bar(cap ? Math.min(1, harem / cap) : 0, 'love'), slot !== null ? `${harem}頭/見張${cap}` : 'なし'),
@@ -119,7 +121,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
     const harem = holder ? w.slotFemales(w.slotOf(p)!).length : 0;
     const hintText = holder
       ? harem === 0
-        ? 'まだメスがいない。メスは浜を見て回り、魅力のある主のもとへ自然に集まってくる。体力とホコの張りを保ち、浜を騒がしくしないで待とう。'
+        ? 'まだメスがいない。メスは浜を見て回り、魅力のある主のもとへ自然に集まってくる。脂肪とホコの張りを保ち、浜を騒がしくしないで待とう。'
         : '主として浜を守っている。挑戦者を退け、メスを見張れ。「おまかせ」なら様子を見てメスに構ってくれる。'
       : age < 5
         ? 'まだ挑むには若い。うろついて、隙をうかがおう。'
@@ -168,8 +170,8 @@ function planText(w: World): string {
     case 'auto': return 'おまかせ：毎朝ハーレムの様子を見て、守る・なだめる・構うから選ぶ。変えるまで毎日続く';
     case 'roam': return 'うろついて、見張りの外のメスをうかがう。変えるまで毎日続く';
     case 'rest': return w.player && w.slotOf(w.player) !== null
-      ? '海で食べる（体力が戻る。ただし見張りはほとんどできない）。変えるまで毎日続く'
-      : '海で食べる（体力が戻る。交尾はしない）。変えるまで毎日続く';
+      ? '海で食べる（脂肪が戻る。ただし見張りはほとんどできない）。変えるまで毎日続く'
+      : '海で食べる（脂肪が戻る。交尾はしない）。変えるまで毎日続く';
     case 'follow': return `${holderName(s.slot)}の浜に付き従い、隙を待つ`;
     case 'infiltrate': return `メスのふりをして${holderName(s.slot)}の浜に紛れ込む`;
     case 'court': {
@@ -231,7 +233,7 @@ export function inspector(g: GameView, ind: Individual): HTMLElement {
   rows[1].querySelector('.v')!.replaceWith(h('span', { class: 'v' }, nameLink(g, father)));
   rows.push(stat('子', h('span'), `${ind.childIds.length}頭（生存${ind.childIds.filter((c) => w.get(c)?.alive).length}）`));
   if (ind.alive) {
-    rows.push(stat('体力', bar(ind.condition, 'hp'), pct(ind.condition)));
+    rows.push(stat('脂肪', bar(ind.condition, 'hp'), pct(ind.condition)));
     if (ind.injury > 0.05) rows.push(stat('ケガ', bar(ind.injury, 'hurt'), pct(ind.injury)));
   }
   rows.push(stat('体重', h('span'), `${Math.round(bodyMass(ind, y))}kg`));

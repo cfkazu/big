@@ -200,12 +200,17 @@ export function bodyMass(ind: Individual, year: number): number {
   return ind.base.body * g * (0.8 + 0.2 * ind.condition);
 }
 
+/** ホコの張り（0.55〜1）。繁殖期の始まりの脂肪で決まる。採餌期のあいだは今の脂肪で見込む。 */
+export function hokoFirmness(ind: Individual, current = false): number {
+  return 0.55 + 0.45 * (current ? ind.condition : ind.seasonCondition);
+}
+
 /** 見せ合いで見えるホコの長さ（cm）。遺伝 × 年齢 × コンディション × 活力 × ツヤ。 */
 export function hokoDisplay(ind: Individual, year: number): number {
   if (ind.sex !== 'M') return 0;
   const age = ind.ageAt(year);
   const g = growth(age, 7, 0.25) * senescence(age, 12, 0.04);
-  const cond = 0.55 + 0.45 * ind.seasonCondition;
+  const cond = hokoFirmness(ind);
   const vig = 0.85 + 0.15 * ind.base.vigor;
   return ind.base.hoko * g * cond * vig * (1 + ind.shine);
 }
