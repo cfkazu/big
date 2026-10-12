@@ -315,18 +315,31 @@ describe('きのうのできごと', () => {
 });
 
 describe('見立てとおまかせ', () => {
-  it('浜の主に見せ合いで勝つと見立てるのは、ホコがはっきり大きいときだけ', () => {
-    const w = World.create(51, 30);
-    w.choosePlayer(w.founderCandidates()[0].id, true);
-    w.startBreedingSeason();
-    const p = w.player!;
-    const holder = w.get(w.slotHolders.find((id) => id != null && id !== p.id)!)!;
-    for (const t of w.challengeTargets()) {
-      const v = w.challengeVerdict(w.get(t.id)!);
-      const ratio = (w.hoko(p) * (1 + p.base.hubris)) / t.perceived;
-      if (v.kind === 'displayWin') expect(ratio).toBeGreaterThan(t.isHolder ? 1.19 : 1.11);
+  it('見立ては実際の見せ合いの結果と合う（「勝てそう」はたいてい相手が引き、「決まらない」はたいてい引かない）', () => {
+    const tally: Record<string, { n: number; retreat: number }> = {};
+    for (const seed of [51, 52, 53, 54, 55, 56, 57, 58]) {
+      const w = World.create(seed, 30);
+      for (const c of w.founderCandidates().slice(0, 2)) {
+        w.choosePlayer(c.id, true);
+        w.startBreedingSeason();
+        const p = w.player!;
+        for (const t of w.challengeTargets()) {
+          const opp = w.get(t.id)!;
+          const v = w.challengeVerdict(opp);
+          // 勝負と同じ式：相手が見せ合いで引くか
+          const thr = 1.05 + 0.12 * opp.base.aggression + (t.isHolder ? 0.08 : 0);
+          const retreat = w.perceivedHoko(opp, p) / (w.hoko(opp) * (1 + opp.base.hubris)) > thr;
+          const e = (tally[v.kind] ??= { n: 0, retreat: 0 });
+          e.n++;
+          if (retreat) e.retreat++;
+          expect(v.pWin).toBeGreaterThanOrEqual(v.odds - 1e-9);
+          expect(v.pWin).toBeLessThanOrEqual(1);
+        }
+      }
     }
-    expect(w.challengeVerdict(holder).odds).toBeGreaterThanOrEqual(0);
+    if (tally.displayWin) expect(tally.displayWin.retreat / tally.displayWin.n).toBeGreaterThan(0.75);
+    for (const k of ['fight', 'displayLose']) if (tally[k]) expect(tally[k].retreat / tally[k].n).toBeLessThan(0.25);
+    expect(tally.fight?.n ?? 0).toBeGreaterThan(0);
   });
 
   it('おまかせの主は、メスがいなければ海で食べ、翌日はおまかせに戻る', () => {
@@ -529,5 +542,30 @@ describe('浜の奪い合い', () => {
     };
     for (let y = 0; y < 15; y++) w.simulateYearAuto();
     expect(dup).toBe(0);
+  });
+});
+
+describe('セリフのくり返し', () => {
+  it('目に入るつぶやきで、同じ文が一年に何度も出ない', () => {
+    let worst = 0;
+    let total = 0;
+    let distinct = 0;
+    for (const seed of [1, 2]) {
+      const w = World.create(seed, 0);
+      w.choosePlayer(w.founderCandidates()[0].id, true);
+      for (let y = 0; y < 3; y++) {
+        const before = w.log.length;
+        w.simulateYearAuto();
+        const lines = w.log.slice(before).filter((l) => l.kind === 'thought').map((l) => l.text.replace(/^[^「]*「/, '「'));
+        const c = new Map<string, number>();
+        for (const t of lines) c.set(t, (c.get(t) ?? 0) + 1);
+        total += lines.length;
+        distinct += c.size;
+        worst = Math.max(worst, ...c.values());
+        expect(lines.some((t) => t.includes('誰か'))).toBe(false);
+      }
+    }
+    expect(worst).toBeLessThanOrEqual(7);
+    expect(distinct / total).toBeGreaterThan(0.65);
   });
 });

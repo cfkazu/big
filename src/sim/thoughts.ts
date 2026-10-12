@@ -97,7 +97,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   groomedFur: {
     mood: 'happy',
-    any: ['ゴシゴシ……ああ、そこそこ。', '{other}に毛づくろいしてもらった。極楽だ。', '背中がかゆいところに届く。いい子だ。', '{other}の毛づくろいで、眠くなってきた。', '砂まみれだった背中がすっきりした。', '主でよかったと思う瞬間だ。'],
+    any: ['ゴシゴシ……ああ、そこそこ。', '首の後ろまで届く。器用なものだ。', 'うとうと……はっ、寝てた。', '{other}の毛づくろいは、ていねいだ。', '{other}に毛づくろいしてもらった。極楽だ。', '背中がかゆいところに届く。いい子だ。', '{other}の毛づくろいで、眠くなってきた。', '砂まみれだった背中がすっきりした。', '主でよかったと思う瞬間だ。'],
   },
   hungry: {
     mood: 'sad',
@@ -113,7 +113,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   seasonHappy: {
     mood: 'happy',
-    any: ['今年は{n}回つがえた。いい一年だった。', '{n}回。悪くない。来年もこうありたい。', 'いい季節だった。子が楽しみだ。', '{n}回。浜の王と呼ばれてもいいだろう。', '海で太って、来年もこの浜に帰ってこよう。'],
+    any: ['今年は{n}回つがえた。いい一年だった。', '{n}回。悪くない。来年もこうありたい。', 'いい季節だった。子が楽しみだ。', '{n}回。胸を張って海へ帰れる。', '海で太って、来年もこの浜に帰ってこよう。'],
   },
   seasonSome: {
     mood: 'neutral',
@@ -476,7 +476,7 @@ export function makeThought(
   ind: Individual,
   key: ThoughtKey,
   rng: Rng,
-  ctx: { year: number; day: number; other?: string; n?: number; tags?: Tag[]; cm?: number; aboutId?: number },
+  ctx: { year: number; day: number; other?: string; n?: number; tags?: Tag[]; cm?: number; aboutId?: number; avoid?: (raw: string) => boolean },
 ): Thought {
   const e = T[key];
   const mine = custom.filter((c) => c.key === key);
@@ -491,11 +491,18 @@ export function makeThought(
   else if (e.brash && brashness > 0.6 && rng.chance(0.7)) pool = [...e.brash, ...anyExtra];
   else if (e.timid && brashness < 0.4 && rng.chance(0.7)) pool = [...e.timid, ...anyExtra];
   else pool = [...e.any, ...anyExtra];
+  // 最近言った・ほかの個体が言ったばかりの文は避ける。選んだ束で尽きたら、ふつうのセリフから選ぶ。
+  if (ctx.avoid) {
+    const fresh = pool.filter((t) => !ctx.avoid!(t));
+    const base = [...e.any, ...(e.brash ?? []), ...(e.timid ?? []), ...anyExtra].filter((t) => !ctx.avoid!(t));
+    if (fresh.length > 0) pool = fresh;
+    else if (base.length > 0) pool = base;
+  }
+  const raw = rng.pick(pool);
   const age = ind.ageAt(ctx.year);
-  const text = rng
-    .pick(pool)
+  const text = raw
     .replaceAll('{I}', pronoun(ind, age))
     .replaceAll('{other}', ctx.other ?? '誰か')
     .replaceAll('{n}', String(ctx.n ?? 0));
-  return { text, year: ctx.year, day: ctx.day, mood: e.mood, key, aboutId: ctx.aboutId };
+  return { text, year: ctx.year, day: ctx.day, mood: e.mood, key, aboutId: ctx.aboutId, raw };
 }

@@ -33,6 +33,8 @@ export interface Thought {
   key?: string;
   /** 誰について言ったか */
   aboutId?: number;
+  /** 差し込み前の元の文 */
+  raw?: string;
 }
 
 export type DeathCause = 'old' | 'orca' | 'starve' | 'wound' | 'sick' | 'crushed' | 'orphan' | 'weak';
@@ -108,6 +110,10 @@ export class Individual {
   dynasty = 0;
 
   thought: Thought | null = null;
+  /** 最近言ったセリフの元の文（同じことを繰り返さないため） */
+  recentLines: string[] = [];
+  /** 場面ごとに最後につぶやいた日（year*100+day） */
+  keyDay: Record<string, number> = {};
   /** よその浜からの移入個体 */
   immigrant = false;
   /** 懐きやすさ（0〜1、生まれつき） */

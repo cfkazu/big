@@ -195,7 +195,10 @@ export class World {
   /** 主のとき、おまかせを選んでいるか */
   holderAuto = true;
   /** プレイヤーが主なのに、メスが一頭もいない日が続いた日数 */
-  private emptyHaremDays = 0;
+  /** 群れの誰かがその文を最後に言った日（year*100+day） */
+  private saidRecently = new Map<string, number>();
+  /** プレイヤーの浜にメスがいない日が何日続いているか */
+  emptyHaremDays = 0;
   /** 今日の行動をおまかせで決めたか（翌朝またおまかせに戻す） */
   private autoToday = false;
   /** 今日プレイヤーがなだめた浜 */
@@ -817,14 +820,10 @@ export class World {
       }
     }
 
-    // メスのいない浜を「守る」で守り続けていたら、知らせる
+    // メスのいない日を数える（3 日続いたら、画面のほうでどうするか聞く）
     const ps = pl ? this.slotOf(pl) : null;
-    if (pl && ps !== null && this.slotFemales(ps).length === 0) {
-      this.emptyHaremDays++;
-      if (this.emptyHaremDays === 3 && this.playerStance.kind === 'guard') {
-        this.pushLog('もう3日、ハーレムにメスがいない。守っても痩せるだけだ。「おまかせ」か「海で食べる」にすれば、待つあいだに蓄えられる。', 'player', pl.id);
-      }
-    } else this.emptyHaremDays = 0;
+    if (pl && ps !== null && this.slotFemales(ps).length === 0) this.emptyHaremDays++;
+    else this.emptyHaremDays = 0;
     // 痩せすぎの警告
     if (pl && pl.onBeach && pl.sex === 'M' && this.age(pl) >= 4 && pl.condition < 0.2 && this.day % 3 === 0) {
       this.pushLog(`脂肪が${Math.round(pl.condition * 100)}%しかない。10%を切ると浜にいられなくなる。「海で食べる」で取り戻そう。`, 'player', pl.id);
@@ -923,18 +922,39 @@ export class World {
   }
 
   /**
-   * プレイヤーが opp に挑んだときの見立て。勝負と同じ基準で判断する。
-   * 浜の主は簡単には引かず（先住効果）、こちらは主の気迫に押されやすい。相手の気性は分からないので並とみなす。
+   * プレイヤーが opp に挑んだときの見立て。勝負と同じ式で、相手が見せ合いで引く見込みを見積もる。
+   * 相手の気性・うぬぼれ・こちらの見え方、こちらの見誤りは分からないので、ありそうな範囲で平均する。
+   *  displayWin：相手はまず引く（8 割以上）／maybe：引くかは五分／fight：見せ合いでは決まらない／displayLose：相手のほうが大きい
+   * pWin は、見せ合いで引かせる見込みと、引かなければ組んで勝つ見込みを合わせたもの。
    */
-  challengeVerdict(opp: Individual): { kind: 'displayWin' | 'displayLose' | 'fight'; odds: number } {
+  challengeVerdict(opp: Individual): { kind: 'displayWin' | 'maybe' | 'displayLose' | 'fight'; odds: number; pRetreat: number; pWin: number } {
     const me = this.player!;
     const resident = this.slotOf(opp) !== null;
-    const mine = this.hoko(me) * (1 + me.base.hubris);
+    const mine = this.hoko(me);
     const theirs = this.perceivedHoko(me, opp);
     const odds = this.fightOdds(me, opp, false, resident);
-    if (theirs / mine > 1.05 + 0.12 * me.base.aggression - (resident ? 0.08 : 0)) return { kind: 'displayLose', odds };
-    if (mine / theirs > 1.11 + (resident ? 0.08 : 0)) return { kind: 'displayWin', odds };
-    return { kind: 'fight', odds };
+    // 決まった種で毎回同じ見積もりにする（一覧を開き直しても変わらない）
+    let seed = (me.id * 73856093) ^ (opp.id * 19349663) ^ (this.year * 83492791);
+    const rand = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const gauss = () => Math.sqrt(-2 * Math.log(1 - rand())) * Math.cos(2 * Math.PI * rand());
+    const N = 400;
+    let retreats = 0;
+    for (let i = 0; i < N; i++) {
+      const trueTheirs = theirs / (1 + 0.06 * gauss());
+      const seen = mine * (1 + 0.06 * gauss());
+      const hubris = Math.min(0.3, Math.max(-0.2, 0.05 * gauss()));
+      const aggr = Math.min(1, Math.max(0, 0.5 + 0.15 * gauss()));
+      if (seen / (trueTheirs * (1 + hubris)) > 1.05 + 0.12 * aggr + (resident ? 0.08 : 0)) retreats++;
+    }
+    const pRetreat = retreats / N;
+    const pWin = pRetreat + (1 - pRetreat) * odds;
+    const kind = pRetreat >= 0.8 ? 'displayWin' : pRetreat >= 0.2 ? 'maybe' : theirs / mine > 1.05 ? 'displayLose' : 'fight';
+    return { kind, odds, pRetreat, pWin };
   }
 
   /** 取っ組み合いで me が勝つ確率。浜の主として受ける側には先住効果が付く。 */
@@ -1854,9 +1874,19 @@ export class World {
 
   private think(ind: Individual, key: ThoughtKey, ctx: { other?: string; n?: number; about?: Individual }, prob = 1): void {
     if (!ind.alive && key !== 'fPupLost') return;
+    const now = this.year * 100 + this.day;
+    // ふだんのつぶやき（必ず言うもの以外）は、同じ場面を2日以内にくり返しにくくする
+    if (prob < 1 && now - (ind.keyDay[key] ?? -99) <= 2) prob *= 0.35;
     if (prob < 1 && !this.rng.chance(prob)) return;
+    ind.keyDay[key] = now;
     const { tags, cm } = this.thoughtTags(ind, ctx.about);
-    ind.thought = makeThought(ind, key, this.rng, { year: this.year, day: this.day, other: ctx.other ?? ctx.about?.name, n: ctx.n, tags, cm, aboutId: ctx.about?.id });
+    // 同じ文を、本人は直近 8 回、群れ全体では 2 日のうちに繰り返さない（候補が尽きたときは除く）
+    const avoid = (raw: string) => ind.recentLines.includes(raw) || now - (this.saidRecently.get(raw) ?? -99) <= 1;
+    ind.thought = makeThought(ind, key, this.rng, { year: this.year, day: this.day, other: ctx.other ?? ctx.about?.name, n: ctx.n, tags, cm, aboutId: ctx.about?.id, avoid });
+    const raw = ind.thought.raw!;
+    ind.recentLines = [...ind.recentLines.slice(-7), raw];
+    // 群れ全体の重なりは、あなたの目に入るセリフ（自分・ハーレム・一族）だけで数える
+    if (ind.id === this.playerId || ind.dynasty > 0 || this.isPlayerHaremFemale(ind)) this.saidRecently.set(raw, now);
     if (ind.id === this.playerId) {
       this.pushLog(`「${ind.thought.text}」`, 'thought', ind.id);
     } else if (this.isPlayerHaremFemale(ind) || (ind.dynasty > 0 && this.rng.chance(0.3))) {
@@ -1878,7 +1908,7 @@ export class World {
       else if (cm <= mean - 4) tags.push('small');
     }
     if (female && this.age(female) >= 3) {
-      if (female.loyalty > 0.55) tags.push('fond');
+      if (female.loyalty > 0.55 && female.slot !== null && this.slotHolders[female.slot] != null) tags.push('fond');
       else if (female.loyalty < 0.15 && female.slot !== null) tags.push('cold');
       if (female.base.pref > 0.62) tags.push('hokoFan');
       else if (female.base.pref < 0.38) tags.push('gentleFan');

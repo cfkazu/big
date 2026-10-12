@@ -115,7 +115,7 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
   },
   // ─── メスが主を見て ───
   fAdmire: {
-    big: ['あのホコ、見た？　うちのボスよ。', '相手が気の毒になるくらいの差だったわ。'],
+    big: ['あのホコ、見た？　{other}よ。', '相手が気の毒になるくらいの差だったわ。'],
     small: ['ホコは小さいのに、よく勝ったわね。'],
     hokoFan: ['ボスのホコ、今日も惚れ惚れしちゃう。'],
   },
@@ -131,14 +131,14 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
     gentleFan: ['{other}は乱暴じゃなさそう。'],
   },
   fIdle: {
-    fond: ['ボスのそばにいると落ち着く。', 'うちのボスがいちばん。'],
+    fond: ['ボスのそばにいると落ち着く。', '{other}がいちばん。'],
     cold: ['ここのボス、いまいちなのよね。', 'ほかの浜のほうが居心地よさそう。'],
     hokoFan: ['ほかの浜に、もっと大きいホコの主はいないかしら。'],
-    big: ['うちのボスのホコ、浜でいちばんじゃないかしら。'],
+    big: ['{other}のホコ、浜でいちばんじゃないかしら。'],
   },
   fProtest: {
     big: ['大きくてもダメなものはダメ！'],
-    small: ['そんなホコで寄ってこないで！'],
+    small: ['{other}ったら、そんなホコで寄ってこないで！'],
   },
   fGaveBirth: {
     fond: ['ボスの子よ。きっと大物になる。'],

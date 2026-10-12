@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "balance": "vite-node scripts/balance.ts",
     "autoplay": "node scripts/autoplay.mjs .",
-    "tenure": "vite-node scripts/tenure.ts"
+    "tenure": "vite-node scripts/tenure.ts",
+    "repeats": "vite-node scripts/repeat-check.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",

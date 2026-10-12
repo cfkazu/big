@@ -114,6 +114,7 @@ class Game implements GameView {
       this.scene.applyDay(w.dayEvents, this.dayMs());
       this.refresh();
       this.toastResult();
+      if (w.day < BREED_DAYS && w.emptyHaremDays % 10 === 3) await this.askEmptyHarem();
       if (w.day >= BREED_DAYS) {
         this.playing = false;
         await this.endSeason();
@@ -282,12 +283,20 @@ class Game implements GameView {
       const render = () => {
         clear(list);
         let shown = rows.filter((r) => !holdersOnly || r.t.isHolder);
-        if (byOdds) shown = [...shown].sort((a, b) => (b.v.kind === 'displayWin' ? 2 : b.v.odds) - (a.v.kind === 'displayWin' ? 2 : a.v.odds));
+        // 勝てる見込み（見せ合いで引かせる＋組んで勝つ）の高い順。同じくらいなら大きなハーレムを先に。
+        const harem = (r: (typeof rows)[number]) => (r.t.isHolder ? w.slotFemales(r.t.slot!).length : -1);
+        if (byOdds) shown = [...shown].sort((a, b) => Math.round(b.v.pWin * 20) - Math.round(a.v.pWin * 20) || harem(b) - harem(a));
         for (const { t, m, v, estrus } of shown) {
-          const oddsText = `勝ち目${Math.round(v.odds * 10)}割`;
-          // プレイヤーは見せ合いで自分からは引かないので、分が悪くても取っ組み合うかどうかの判断になる
+          const odds = oddsWord(v.odds);
+          // プレイヤーは見せ合いで自分からは引かないので、相手が引かなければ取っ組み合うかどうかの判断になる
           const verdict =
-            v.kind === 'displayLose' ? `見せ合いでは分が悪い・組めば${oddsText}` : v.kind === 'displayWin' ? '見せ合いで勝てそう' : `互角・組めば${oddsText}`;
+            v.kind === 'displayWin'
+              ? '見せ合いで勝てそう（相手はまず引く）'
+              : v.kind === 'maybe'
+                ? `見せ合いで引くかは五分・組めば${odds}`
+                : v.kind === 'displayLose'
+                  ? `相手のほうが大きい・組めば${odds}`
+                  : `見せ合いでは決まらない・組めば${odds}`;
           list.append(
             h(
               'button',
@@ -315,11 +324,13 @@ class Game implements GameView {
       const filterBtn = btn('主だけ', () => {
         holdersOnly = !holdersOnly;
         filterBtn.classList.toggle('on', holdersOnly);
+        filterBtn.textContent = holdersOnly ? '✓ 主だけ' : '主だけ';
         render();
       }, 'small');
       const sortBtn = btn('勝ち目順', () => {
         byOdds = !byOdds;
         sortBtn.classList.toggle('on', byOdds);
+        sortBtn.textContent = byOdds ? '✓ 勝ち目順' : '勝ち目順';
         render();
       }, 'small');
       render();
@@ -339,6 +350,56 @@ class Game implements GameView {
       w.setPlayerStance({ kind: 'challenge', targetId: id });
       w.pushLog(`明日、${w.get(id)!.name}に挑むことにした。`, 'player', p.id);
     }
+    this.refresh();
+  }
+
+  /** ハーレムが空のまま日が過ぎたら、どうするか聞く。勝てそうな浜の主をひとり勧める。 */
+  private async askEmptyHarem(): Promise<void> {
+    const w = this.world;
+    const p = w.player;
+    if (!p || w.slotOf(p) === null) return;
+    const best = w
+      .challengeTargets()
+      .filter((t) => t.isHolder && w.slotFemales(t.slot!).length > 0)
+      .map((t) => {
+        const m = w.get(t.id)!;
+        const v = w.challengeVerdict(m);
+        const e = w.slotEstrus(t.slot!);
+        return { t, m, v, e, n: w.slotFemales(t.slot!).length, score: v.pWin * (e.now + e.later + 0.3 * w.slotFemales(t.slot!).length) };
+      })
+      .filter((r) => r.v.pWin >= 0.35)
+      .sort((a, b) => b.score - a.score)[0];
+    const remaining = w.estrusRemaining();
+    const choice = await ask<'target' | 'pick' | 'auto' | 'keep'>((done) =>
+      h(
+        'div',
+        null,
+        h('h2', null, 'ハーレムにメスがいない'),
+        h('div', null, `もう${w.emptyHaremDays}日、あなたの浜にメスがいない。浜全体で発情を残しているメスは、あと${remaining}頭ほど。`),
+        best
+          ? h(
+              'div',
+              { class: 'note', style: 'margin:6px 0' },
+              `おすすめ：♛${best.m.name}（ハーレム${best.n}頭・発情中${best.e.now}・これから${best.e.later}）。`,
+              best.v.kind === 'displayWin' ? '見せ合いで勝てそう。' : `${best.v.kind === 'maybe' ? '見せ合いで引くかは五分、' : '見せ合いでは決まらず、'}組めば${oddsWord(best.v.odds)}。`,
+            )
+          : h('div', { class: 'note', style: 'margin:6px 0' }, 'いま勝てそうな浜の主は見当たらない。おまかせで海で食べて蓄え、終盤に痩せてきた主を狙うのも手。'),
+        h('div', { class: 'sub' }, 'おまかせ：メスが来るまでは海で食べて脂肪を蓄え、メスが来たら世話をする。'),
+        h(
+          'div',
+          { class: 'row' },
+          btn('このまま', () => done('keep'), 'small'),
+          btn('おまかせで待つ', () => done('auto')),
+          btn('相手を選んで挑む…', () => done('pick')),
+          best ? btn(`${best.m.name}に挑む`, () => done('target'), 'primary') : null,
+        ),
+      ),
+    );
+    if (choice === 'target' && best) {
+      w.setPlayerStance({ kind: 'challenge', targetId: best.m.id });
+      w.pushLog(`明日、${best.m.name}に挑むことにした。`, 'player', p.id);
+    } else if (choice === 'pick') await this.openChallenge();
+    else if (choice === 'auto') w.setPlayerStance({ kind: 'auto' });
     this.refresh();
   }
 
@@ -861,7 +922,7 @@ class Game implements GameView {
             ? `${opp.name}のホコは明らかに大きい`
             : gap < 0.87
               ? `${opp.name}はホコで劣るのに引かない`
-              : `${opp.name}と互角のにらみ合い`;
+              : `${opp.name}とホコは互角のにらみ合い`;
       const lose = pr.kind === 'challenged' ? pr.slotAtStake : w.player && w.slotOf(w.player) !== null;
       const desc =
         pr.kind === 'challenged'
@@ -882,7 +943,9 @@ class Game implements GameView {
           h('div', { class: 'side' }, portrait(opp, w, { rear: true }), h('div', { class: 'name' }, opp.name), ruler(pr.perceivedOpp, 'opp'), h('div', null, `推定 ${pr.perceivedOpp.toFixed(1)}cm`), pr.kind === 'escalate' ? h('div', { class: 'sub' }, `体重 ${Math.round(pr.oppBody)}kg`) : null),
         ),
         h('div', { class: 'sub' }, `相手の${opp.base.aggression > 0.62 ? '目は血走っている' : opp.base.aggression < 0.38 ? '様子は落ち着いている' : '出方はわからない'}。あなたの脂肪 ${Math.round(p.condition * 100)}%・ケガ ${Math.round(p.injury * 100)}%`),
-        pr.kind === 'escalate' ? h('div', { class: 'name' }, `取っ組み合いの勝ち目：およそ${Math.round(pr.winChance * 10)}割`) : null,
+        pr.kind === 'escalate'
+          ? h('div', { class: 'name' }, `取っ組み合うと：${oddsWord(pr.winChance)}${pr.winChance >= 0.8 ? '（体格と脂肪でこちらが上）' : pr.winChance <= 0.2 ? '（体格と脂肪で相手が上）' : ''}`)
+          : null,
         h(
           'div',
           { class: 'row' },
@@ -1073,3 +1136,10 @@ function moodLabel(loyalty: number): string {
 
 const game = new Game();
 if (import.meta.env.DEV) (window as unknown as { game: Game }).game = game;
+
+/** 勝ち目の言い方。0割・10割とは言わない。 */
+function oddsWord(p: number): string {
+  if (p < 0.05) return 'ほぼ勝ち目なし';
+  if (p > 0.95) return 'ほぼ確実に勝てる';
+  return `勝ち目${Math.min(9, Math.max(1, Math.round(p * 10)))}割`;
+}

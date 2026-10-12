@@ -92,7 +92,7 @@ function playerCard(g: GameView): HTMLElement {
     stat('貯精', bar(spermCap ? sperm / spermCap : 0, 'sperm'), `${Math.round(sperm)}億`),
     stat('戦績', h('span', { class: 'sub' }, rank ? `見せ合い・取っ組み合いの勝ち負け順・${rank.of}頭中` : '―'), rank ? `${rank.rank}位` : '―'),
     stat('ハーレム', bar(cap ? Math.min(1, harem / cap) : 0, 'love'), slot !== null ? `${harem}頭/見張${cap}` : 'なし'),
-    p.season.peakHarem > 0 || slot !== null ? stat('　今季', h('span', { class: 'sub' }, slot !== null ? `浜で${haremOrder(w, slot)}番目の大所帯` : ''), `最大${Math.max(p.season.peakHarem, harem)}頭`) : null,
+    p.season.peakHarem > 0 || slot !== null ? stat('　今季', h('span', { class: 'sub' }, slot !== null && harem > 0 ? `浜で${haremOrder(w, slot)}番目の大所帯` : ''), `最大${Math.max(p.season.peakHarem, harem)}頭`) : null,
     stat('今季交尾', h('span'), `${p.season.matings}回`),
     stat('子', h('span'), `${p.childIds.length}頭`),
   );
