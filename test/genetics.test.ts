@@ -478,11 +478,14 @@ describe('子どもたち', () => {
     ww.think = (ind, key, ctx, prob) => {
       const before = ind.thought;
       orig(ind, key, ctx, prob);
-      if (ind.thought !== before && (key === 'pupHelpGroom' || key === 'youngEnvy')) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
+      if (ind.thought !== before && (key === 'pupHelpGroom' || key === 'youngEnvy' || key === 'pupWaitMom')) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
     };
     for (let y = 0; y < 3; y++) w.simulateYearAuto();
     const help = said.get('pupHelpGroom') ?? [];
     const envy = said.get('youngEnvy') ?? [];
+    const wait = said.get('pupWaitMom') ?? [];
+    expect(wait.length).toBeGreaterThan(0);
+    expect(wait.every((x) => x.age === 0 && !/ホコ|なめ/.test(x.text))).toBe(true);
     expect(help.length).toBeGreaterThan(0);
     expect(envy.length).toBeGreaterThan(0);
     expect(help.every((x) => x.sex === 'F' && x.age === 0)).toBe(true);

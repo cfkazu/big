@@ -1591,11 +1591,20 @@ export class World {
   private youngReactions(): void {
     const busy = new Set<number>();
     for (const e of this.dayEvents) {
-      if (e.kind !== 'groom' || e.type === 'hoko') continue;
+      if (e.kind !== 'groom') continue;
       const mother = this.get(e.femaleId);
       const pup = mother?.pupId != null ? this.get(mother.pupId) : undefined;
       const h = this.get(e.maleId);
-      if (!mother || !pup || !h || !pup.alive || pup.sex !== 'F' || busy.has(pup.id) || !this.rng.chance(0.3)) continue;
+      if (!mother || !pup || !h || !pup.alive || busy.has(pup.id)) continue;
+      // ホコの手入れには子は加わらず、そばで待っている
+      if (e.type === 'hoko') {
+        if (this.rng.chance(0.25)) {
+          busy.add(pup.id);
+          this.think(pup, 'pupWaitMom', { about: h });
+        }
+        continue;
+      }
+      if (pup.sex !== 'F' || !this.rng.chance(0.3)) continue;
       busy.add(pup.id);
       this.think(pup, 'pupHelpGroom', { about: h });
       if (h.id === this.playerId) this.pushLog(`${pup.name}も母の${mother.name}のまねをして、${GROOM_ACT[e.type]}手伝った。`, 'player', pup.id);
@@ -1965,7 +1974,7 @@ export interface HeadRecord {
 const FEMALE_LINE_PRIORITY = [
   'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
   'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'pupHelpGroom', 'fAdmire', 'fSoothed', 'newHolderFemale',
-  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'youngEnvy', 'fIdle',
+  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'youngEnvy', 'pupWaitMom', 'fIdle',
 ];
 
 /** 血統占有率の節目 */
