@@ -21,7 +21,7 @@
   --brown: #733e39;
   --plum: #68386c;
   --px: 2px;
-  --font: 'DotGothic16', monospace;
+  --font: 'DotGothic16', 'Osaka-Mono', 'MS Gothic', monospace;
   color-scheme: dark;
 }
 
@@ -481,6 +481,10 @@ h3::before {
 #log .entry.k-event { color: var(--gray1); }
 #log .entry.k-thought { color: var(--gray0); }
 
+#log .entry .when.bullet {
+  width: 12px;
+}
+
 #log .entry .who {
   cursor: pointer;
   text-decoration: underline dotted;
@@ -646,6 +650,10 @@ table.mini td.r {
   to { visibility: hidden; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .blink { animation: none; }
+}
+
 canvas.chart {
   image-rendering: pixelated;
   display: block;
@@ -688,5 +696,9 @@ canvas.chart {
     padding: 8px 16px;
   }
   #top { flex-wrap: wrap; height: auto; }
+  .title-card { padding: 4px 12px; }
+  .title-card .logo { font-size: 32px; letter-spacing: 2px; text-shadow: 2px 2px 0 var(--rust), 4px 4px 0 var(--ink); }
+  .title-card .tagline { margin: 2px 0 8px; }
+  .title-card .blink { display: none; }
   #side { overflow: visible; }
 }

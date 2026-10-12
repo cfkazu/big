@@ -433,7 +433,7 @@ class Game implements GameView {
           'メスは一度の発情で何頭ともつがいうる。父を決めるのは精子のくじ引き。',
           '大きなホコは、海ではシャチの的になる。',
           '血を残せ。当主が死んでも、血を引く者が継ぐ。',
-        ].map((t) => h('div', { class: 'entry k-event' }, h('span', { class: 'when' }, '・'), h('span', null, t))),
+        ].map((t) => h('div', { class: 'entry k-event' }, h('span', { class: 'when bullet' }, '・'), h('span', null, t))),
       ),
     );
     const overlay = $('overlay');
