@@ -546,7 +546,7 @@ export class World {
       if (!m) continue;
       this.slotHolders[s] = m.id;
       m.slot = s;
-      for (const f of this.slotFemales(s)) f.loyalty *= 0.2;
+      for (const f of this.slotFemales(s)) f.loyalty = f.loyalty * 0.2 + 0.2 * f.warmth;
       this.dayEvents.push({ kind: 'takeover', slot: s, newId: m.id, oldId: null });
       this.think(m, 'takeHarem', { other: '空き' });
       if (m.id === this.playerId) {
@@ -929,7 +929,8 @@ export class World {
       this.think(w, 'takeHarem', { other: l.name });
       this.think(l, 'loseHarem', { other: w.name });
       for (const f of this.slotFemales(slot)) {
-        f.loyalty *= 0.25;
+        // 主が替わると愛着は薄れる。懐きやすいメスほど新しい主にも早くなじむ。
+        f.loyalty = f.loyalty * 0.25 + 0.2 * f.warmth;
         if (this.rng.chance(0.25)) this.think(f, 'newHolderFemale', { other: w.name });
       }
       if (w.id === pid) {
@@ -982,7 +983,7 @@ export class World {
       const crowded = from !== null && !!oldHolder && this.slotFemales(from).length > this.guardCap(oldHolder);
       const harassed = from !== null && this.slotHarass[from] > 0.8;
       f.slot = best;
-      f.loyalty = 0;
+      f.loyalty = this.arrivalLoyalty(f, this.get(this.slotHolders[best])!, initial);
       this.invalidateSlots();
       this.dayEvents.push({ kind: 'move', femaleId: f.id, from, to: best });
       if (!initial) {
@@ -995,18 +996,35 @@ export class World {
     }
   }
 
+  /** メスから見た主の魅力（好みしだいで、ホコの大きさか穏やかさ） */
+  private attraction(f: Individual, h: Individual): number {
+    const hokoZ = (this.perceivedHoko(f, h) - 40) / 8;
+    const gentle = (0.5 - h.base.aggression) * 2;
+    return f.base.pref * hokoZ + (1 - f.base.pref) * gentle;
+  }
+
+  /**
+   * 新しい主のもとに来たメスの最初の愛着。懐きやすさ・主の魅力・去年の馴染みでばらつく。
+   * 繁殖期の途中で移ってきたメスは、まだよそよそしい。
+   */
+  private arrivalLoyalty(f: Individual, h: Individual, initial: boolean): number {
+    const familiar = h.id === f.lastHolderId ? 0.3 : 0;
+    const base = 0.3 * f.warmth + 0.1 * Math.max(0, this.attraction(f, h)) + familiar + this.rng.normal(0, 0.05);
+    return Math.max(0, Math.min(0.8, initial ? base : base * 0.5));
+  }
+
   private slotUtility(f: Individual, s: number, h: Individual): number {
     const n = this.slotFemales(s).filter((x) => x.id !== f.id).length;
     const cap = this.guardCap(h);
-    const hokoZ = (this.perceivedHoko(f, h) - 40) / 8;
-    const gentle = (0.5 - h.base.aggression) * 2;
-    const attract = f.base.pref * hokoZ + (1 - f.base.pref) * gentle;
+    const attract = this.attraction(f, h);
+    // 去年身を寄せていた主のもとへは戻りやすい（繁殖場所への執着）
+    const familiar = h.id === f.lastHolderId ? 0.35 : 0;
     const crowd = 0.9 * Math.max(0, (n + 1) / cap - 0.85);
     const harass = this.slotHarass[s] * 0.3;
     const company = 0.08 * Math.min(n, 6);
     const stay = f.slot === s ? 0.35 + f.loyalty * 1.2 : 0;
     const sats = Math.min(2, this.satelliteCount[s] ?? 0) * 0.15;
-    return attract - crowd - harass + company + stay + sats + this.rng.normal(0, 0.3);
+    return attract - crowd - harass + company + stay + sats + familiar + this.rng.normal(0, 0.3);
   }
 
   /** 繁殖期中のメスの状態（主が迫るときの目安） */
@@ -1408,6 +1426,7 @@ export class World {
       playerConceptions: this.playerConceptions,
     };
     for (const ind of this.living()) {
+      if (ind.sex === 'F') ind.lastHolderId = ind.slot !== null ? this.slotHolders[ind.slot] ?? null : null;
       ind.onBeach = false;
       ind.slot = this.slotOf(ind);
       ind.pupId = null;

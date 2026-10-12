@@ -106,6 +106,10 @@ export class Individual {
   thought: Thought | null = null;
   /** よその浜からの移入個体 */
   immigrant = false;
+  /** 懐きやすさ（0〜1、生まれつき） */
+  warmth = 0.5;
+  /** 去年の繁殖期の終わりに身を寄せていた主（メス） */
+  lastHolderId: number | null = null;
 
   constructor(opts: {
     id: number;
@@ -124,6 +128,7 @@ export class Individual {
     this.fatherId = opts.fatherId;
     this.birthYear = opts.birthYear;
     this.base = computeBase(opts.genome, opts.rng);
+    this.warmth = opts.rng.next();
   }
 
   ageAt(year: number): number {
