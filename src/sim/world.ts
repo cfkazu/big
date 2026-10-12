@@ -1899,7 +1899,13 @@ function autoLabel(w: World, s: Stance): string {
     case 'escort': return `見張りの外にいる発情中の${name(s.femaleId)}に寄り添う`;
     case 'tend': return `機嫌の悪い${name(s.femaleId)}を毛づくろいしてやる`;
     case 'groom': return `${name(s.femaleId)}に${GROOM_LABEL[s.type]}をさせる`;
-    case 'rest': return 'メスがいないか発情の近いメスがいないので、海で食べて蓄える';
+    case 'rest': {
+      // 理由で文言を分ける（メスが何頭もいるのに「いない」と読めないように）
+      const p = w.player;
+      const slot = p ? w.slotOf(p) : null;
+      const n = slot !== null ? w.slotFemales(slot).length : 0;
+      return n === 0 ? 'ハーレムにメスがいないので、海で食べて蓄える' : `痩せてきたうえ、ハーレムの${n}頭はしばらく発情しないので、海で食べて蓄える`;
+    }
     default: return '浜を守る';
   }
 }
