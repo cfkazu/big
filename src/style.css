@@ -892,6 +892,43 @@ canvas.chart {
   border: 2px solid var(--ink);
 }
 
+/* ─── セリフ帳 ─── */
+.lb-win { width: min(760px, 94vw); }
+.linebook h3 { margin: 12px 0 4px; font-size: 16px; font-weight: normal; color: var(--gold0); }
+.lb-note { margin: 4px 0; }
+.lb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; }
+.lb-sit { white-space: normal; text-align: left; }
+.lb-sit-in { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.lb-count { color: var(--gray1); text-shadow: none; flex: none; }
+.lb-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.lb-head h2 { margin: 0; font-size: 24px; }
+.lb-form { margin: 4px 0 8px; }
+.lb-label { color: var(--gold1); margin: 4px 0 2px; }
+.lb-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 2px 0 4px; }
+.lb-chips .btn.small { white-space: normal; }
+.lb-input {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 16px;
+  color: var(--white);
+  background: var(--ink);
+  border: none;
+  box-shadow: 0 0 0 2px var(--gray2);
+  padding: 4px 6px;
+  margin: 2px 0 6px;
+  resize: vertical;
+}
+.lb-input:focus { outline: none; box-shadow: 0 0 0 2px var(--gold1); }
+.lb-tok { color: var(--cyan); }
+.tok { color: var(--cyan); }
+.lb-preview { min-height: 32px; }
+.lb-status { flex: 1; align-self: center; color: var(--gold1); }
+.lb-list ul { margin: 0; padding-left: 18px; }
+.lb-list li { margin: 2px 0; }
+.lb-list li.mine { color: var(--white); }
+.lb-del { margin-left: 6px; vertical-align: middle; }
+
 @media (max-width: 900px) {
   html, body { overflow-x: clip; overflow-y: visible; height: auto; }
   #app {

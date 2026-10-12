@@ -20,6 +20,8 @@ import {
 import { bar, btn, clear, h } from './ui/dom';
 import { installFrames } from './ui/frame';
 import { ask, isModalOpen } from './ui/modal';
+import { openLineBook } from './ui/linebook';
+import { initLineStore } from './ui/linestore';
 import { renderLog, renderSide, type GameView, type Tab } from './ui/panels';
 import { portrait } from './ui/portrait';
 import { bloodEstimate, potentialStars, starText } from './sim/lineage';
@@ -47,6 +49,7 @@ class Game implements GameView {
 
   constructor() {
     installFrames();
+    initLineStore();
     this.world = World.create(Math.floor(Math.random() * 1e9), 15);
     this.world.startBreedingSeason();
     this.scene = new Scene(this.canvas, this.world);
@@ -601,6 +604,7 @@ class Game implements GameView {
       'div',
       { class: 'controls' },
       btn(this.autoJudge ? '判断：気質任せ' : '判断：自分で', () => { this.autoJudge = !this.autoJudge; this.renderTop(); }, `small ${this.autoJudge ? 'on' : ''}`),
+      btn('セリフ帳', () => void openLineBook(), 'small'),
       btn('遊び方', () => void this.showHelp(), 'small'),
     );
     top.append(controls);

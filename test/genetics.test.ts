@@ -18,6 +18,7 @@ import {
 import { Rng } from '../src/sim/rng';
 import { World } from '../src/sim/world';
 import { bloodEstimate } from '../src/sim/lineage';
+import { builtinLines, customLines, makeThought, setCustomLines, SITUATIONS } from '../src/sim/thoughts';
 
 function setAllele(g: Genome, locusId: string, which: 0 | 1, value: number) {
   const { chrom, idx } = LOCUS_INDEX[locusId];
@@ -419,5 +420,33 @@ describe('自分の欄のセリフ', () => {
     f1.thought = null;
     f2.thought = null;
     expect(w.featuredThought()!.speaker.id).toBe(p.id);
+  });
+});
+
+describe('セリフ帳', () => {
+  it('足したセリフは条件が合えば使われ、消せば使われない', () => {
+    const w = World.create(5, 20);
+    const f = w.living().find((i) => i.sex === 'F')!;
+    const rng = new Rng(3);
+    setCustomLines([{ id: 'x', key: 'fMated', tag: 'huge', text: '{other}の大物、忘れない。' }]);
+    let hit = 0;
+    for (let i = 0; i < 200; i++) {
+      const t = makeThought(f, 'fMated', rng, { year: w.year, day: 1, other: 'ゴンタ', tags: ['huge'] });
+      if (t.text === 'ゴンタの大物、忘れない。') hit++;
+    }
+    expect(hit).toBeGreaterThan(5);
+    // 条件が合わないときは出ない
+    for (let i = 0; i < 200; i++) expect(makeThought(f, 'fMated', rng, { year: w.year, day: 1, other: 'ゴンタ', tags: ['small'] }).text).not.toContain('大物、忘れない');
+    // 条件なしのセリフはいつでも混ざる
+    setCustomLines([{ id: 'y', key: 'fIdle', tag: '', text: '{I}は砂がすき。' }]);
+    const texts = new Set(Array.from({ length: 300 }, () => makeThought(f, 'fIdle', rng, { year: w.year, day: 1 }).text));
+    expect([...texts].some((t) => t.endsWith('は砂がすき。') && !t.includes('{I}'))).toBe(true);
+    // おかしなものは入らない
+    setCustomLines([{ id: 'z', key: 'nope' as never, tag: '', text: 'x' }, { id: 'w', key: 'fIdle', tag: 'bogus' as never, text: 'y' }]);
+    expect(customLines()).toHaveLength(0);
+  });
+
+  it('どの場面にも5つ以上のセリフがある', () => {
+    for (const key of Object.keys(SITUATIONS) as (keyof typeof SITUATIONS)[]) expect(builtinLines(key).length, key).toBeGreaterThanOrEqual(5);
   });
 });
