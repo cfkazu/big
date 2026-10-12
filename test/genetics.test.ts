@@ -190,4 +190,30 @@ describe('主としての行動', () => {
     runDay(w);
     expect(p.shine).toBeGreaterThan(0.03);
   });
+
+  it('毛づくろいしてあげると機嫌が大きく良くなる', () => {
+    const { w, f } = setupHolder();
+    f.loyalty = 0.1;
+    w.setPlayerStance({ kind: 'tend', femaleId: f.id });
+    runDay(w);
+    expect(f.loyalty).toBeGreaterThan(0.24);
+    expect(w.playerStance.kind).not.toBe('tend');
+  });
+
+  it('寄り添っているメスには、ほかのオスが手を出せない', () => {
+    const { w, p, f } = setupHolder();
+    f.estrusStart = w.day;
+    w.setPlayerStance({ kind: 'escort', femaleId: f.id });
+    runDay(w);
+    expect(f.spermStore.every((d) => d.maleId === p.id)).toBe(true);
+  });
+
+  it('なだめると浜の騒がしさが収まる', () => {
+    const { w, p } = setupHolder();
+    const s = w.slotOf(p)!;
+    w.slotHarass[s] = 3;
+    w.setPlayerStance({ kind: 'soothe' });
+    runDay(w);
+    expect(w.slotHarass[s]).toBeLessThan(1);
+  });
 });

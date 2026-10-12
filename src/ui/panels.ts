@@ -29,8 +29,7 @@ export interface GameView {
   stanceRoam(): void;
   openChallenge(): void;
   openSlotPick(kind: 'follow' | 'infiltrate'): void;
-  openCourt(): void;
-  openGroomOrder(): void;
+  openAttend(femaleId?: number): void;
   fastForward(): void;
 }
 
@@ -123,8 +122,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
     if (holder) {
       box.append(
         btn('守る', () => g.stanceGuard(), on('guard')),
-        btn('つがう…', () => g.openCourt(), on('court')),
-        btn('手入れさせる…', () => g.openGroomOrder(), on('groom')),
+        btn('メスに構う…', () => g.openAttend(), ['court', 'groom', 'tend', 'escort', 'soothe'].includes(st) ? 'on' : ''),
       );
     }
     if (age >= 5) box.append(btn('挑む…', () => g.openChallenge(), on('challenge')));
@@ -172,6 +170,16 @@ function planText(w: World): string {
       const f = w.get(s.femaleId);
       return f ? `${f.name}に${GROOM_LABEL[s.type]}をさせる` : '世話をさせる相手がいない';
     }
+    case 'tend': {
+      const f = w.get(s.femaleId);
+      return f ? `${f.name}を毛づくろいしてあげる` : '構う相手がいない';
+    }
+    case 'escort': {
+      const f = w.get(s.femaleId);
+      return f ? `一日じゅう${f.name}に寄り添って守る` : '構う相手がいない';
+    }
+    case 'soothe':
+      return '低い声で鳴いて、ハーレム全体をなだめる';
   }
 }
 
@@ -227,7 +235,12 @@ export function inspector(g: GameView, ind: Individual): HTMLElement {
   }
   rows.push(stat('気性', h('span', { class: 'sub' }, `攻${Math.round(ind.base.aggression * 9)} 胆${Math.round(ind.base.boldness * 9)}`), temperLabel(ind)));
   const thought = ind.thought && ind.alive ? h('div', { class: 'thought' }, `「${ind.thought.text}」`) : null;
-  return h('div', null, head, thought, h('div', null, ...rows), genomeView(ind));
+  // 自分のハーレムのメスなら、ここから直接構える
+  const attend =
+    w.phase === 'breeding' && ind.alive && w.isPlayerHaremFemale(ind)
+      ? h('div', { class: 'actions' }, btn('この子に構う…', () => g.openAttend(ind.id), 'primary'))
+      : null;
+  return h('div', null, head, thought, attend, h('div', null, ...rows), genomeView(ind));
 }
 
 function temperLabel(ind: Individual): string {

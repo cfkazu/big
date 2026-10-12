@@ -647,6 +647,8 @@ h3::before {
 
 .choice .btn-body {
   flex: 1;
+  min-width: 0;
+  white-space: normal;
 }
 
 .list {

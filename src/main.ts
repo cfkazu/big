@@ -10,11 +10,12 @@ import {
   type ForageReport,
   type ForageStrategy,
   type GroomType,
+  type Stance,
   type LogKind,
   type Prompt,
   type SeasonSummary,
 } from './sim/world';
-import { btn, clear, h } from './ui/dom';
+import { bar, btn, clear, h } from './ui/dom';
 import { installFrames } from './ui/frame';
 import { ask, isModalOpen } from './ui/modal';
 import { renderLog, renderSide, type GameView, type Tab } from './ui/panels';
@@ -300,16 +301,42 @@ class Game implements GameView {
     this.refresh();
   }
 
-  /** 主として、ハーレムのメスに迫る相手を選ぶ */
-  async openCourt(): Promise<void> {
+  /** 主として、ハーレムのメスに構う。femaleId を渡すと、その子の行動から始まる。 */
+  async openAttend(femaleId?: number): Promise<void> {
     const w = this.world;
     const p = w.player;
     const s = p ? w.slotOf(p) : null;
     if (!p || s === null) return;
+    let target = femaleId ?? null;
+    for (;;) {
+      if (target === null) {
+        const pick = await this.pickHaremFemale(s);
+        if (pick === null) break;
+        if (pick === 'soothe') {
+          w.setPlayerStance({ kind: 'soothe' });
+          break;
+        }
+        target = pick;
+      }
+      const f = w.get(target);
+      if (!f) break;
+      const stance = await this.pickFemaleAction(f, femaleId === undefined);
+      if (stance === 'back') {
+        target = null;
+        continue;
+      }
+      if (stance) w.setPlayerStance(stance);
+      break;
+    }
+    this.refresh();
+  }
+
+  private pickHaremFemale(slot: number): Promise<number | 'soothe' | null> {
+    const w = this.world;
     // 発情中 → 発情が近い順 → 発情の終わったメス
     const soon = (f: Individual) => (w.femaleStatus(f).estrus ? -1 : f.estrusStart > w.day ? f.estrusStart - w.day : 999);
-    const females = [...w.slotFemales(s)].sort((a, b) => soon(a) - soon(b) || b.loyalty - a.loyalty);
-    const id = await ask<number | null>((done) => {
+    const females = [...w.slotFemales(slot)].sort((a, b) => soon(a) - soon(b) || b.loyalty - a.loyalty);
+    return ask<number | 'soothe' | null>((done) => {
       const list = h('div', { class: 'list' });
       for (const f of females) {
         const st = w.femaleStatus(f);
@@ -317,7 +344,7 @@ class Game implements GameView {
           h(
             'button',
             { class: `btn item ${st.estrus ? 'primary' : ''}`, onclick: () => done(f.id) },
-            h('span', null, f.name, h('span', { class: 'sub' }, ` ${w.age(f)}歳・愛着${Math.round(f.loyalty * 100)}%`)),
+            h('span', null, f.name, h('span', { class: 'sub' }, ` ${w.age(f)}歳・${moodLabel(f.loyalty)}`)),
             h('span', { class: 'sub' }, f.base.pref > 0.6 ? 'ホコ好き' : f.base.pref < 0.4 ? '穏やか好き' : ''),
             h('span', null, st.label),
           ),
@@ -327,56 +354,61 @@ class Game implements GameView {
       return h(
         'div',
         null,
-        h('h2', null, '誰とつがう？'),
-        h('div', { class: 'sub' }, '受け入れてくれるのは発情中のメスだけ。発情していないメスに迫ると突っぱねられ、愛着が下がる。一頭にかまけている日は、ほかのメスへの見張りが手薄になる。'),
+        h('h2', null, `ハーレムのメスたち（${females.length}頭）`),
+        h(
+          'button',
+          { class: 'btn choice', onclick: () => done('soothe') },
+          h('div', { class: 'btn-body' }, h('div', { class: 'name' }, 'ハーレム全体をなだめる'), h('div', { class: 'sub' }, '低い声で鳴いて落ち着かせる。浜の騒がしさが収まり、みんなの機嫌が少し良くなり、出ていくメスが減る。')),
+        ),
+        h('h3', null, '一頭に構う'),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );
     });
-    if (id !== null) w.setPlayerStance({ kind: 'court', femaleId: id });
-    this.refresh();
   }
 
-  /** 主として、ハーレムのメスに世話をさせる */
-  async openGroomOrder(): Promise<void> {
+  private pickFemaleAction(f: Individual, canGoBack: boolean): Promise<Stance | 'back' | null> {
     const w = this.world;
-    const p = w.player;
-    const s = p ? w.slotOf(p) : null;
-    if (!p || s === null) return;
-    const females = [...w.slotFemales(s)].sort((a, b) => b.loyalty - a.loyalty);
-    const pick = await ask<{ id: number; type: GroomType } | null>((done) => {
-      const list = h('div', { class: 'groom-list' });
-      for (const f of females) {
-        const mood = f.loyalty > 0.6 ? '慕っている' : f.loyalty > 0.3 ? 'なついている' : f.loyalty > 0.1 ? 'よそよそしい' : '不満げ';
-        list.append(
-          h(
-            'div',
-            { class: 'groom-row' },
-            h('div', { class: 'who-col' }, h('span', { class: 'name' }, f.name), h('span', { class: 'sub' }, ` 愛着${Math.round(f.loyalty * 100)}%・${mood}`)),
-            h(
-              'div',
-              { class: 'groom-btns' },
-              ...(['hoko', 'wound', 'fur'] as GroomType[]).map((t) => btn(t === 'hoko' ? 'ホコ' : t === 'wound' ? '傷' : '毛', () => done({ id: f.id, type: t }), 'small')),
-            ),
-          ),
+    const p = w.player!;
+    const st = w.femaleStatus(f);
+    const pup = w.get(f.pupId);
+    return ask<Stance | 'back' | null>((done) => {
+      const choice = (title: string, desc: string, stance: Stance, opts: { disabled?: boolean; primary?: boolean } = {}) =>
+        h(
+          'button',
+          { class: `btn choice ${opts.primary ? 'primary' : ''}`, disabled: opts.disabled, onclick: () => done(stance) },
+          h('div', { class: 'btn-body' }, h('div', { class: 'name' }, title), h('div', { class: 'sub' }, desc)),
         );
-      }
-      if (females.length === 0) list.append(h('div', { class: 'sub' }, 'ハーレムにメスがいない。'));
+      const groom = (type: GroomType, label: string, effect: string) =>
+        choice(`${label}をさせる`, effect, { kind: 'groom', femaleId: f.id, type });
       return h(
         'div',
         null,
-        h('h2', null, '誰に世話をさせる？'),
+        h('div', { class: 'card-head' }, portrait(f, w), h('div', null, h('h2', { style: 'margin:0' }, f.name), h('div', { class: 'sub' }, `${w.age(f)}歳・${st.label}`))),
         h(
           'div',
-          { class: 'sub' },
-          `ホコの手入れはツヤが出て見せ合いで有利に、傷の手当ては傷を癒やし、毛づくろいは少し体力が戻る。愛着の低いメスは嫌がり、断られると愛着が下がる。不満がたまったメスは浜を去ることもある。いまのケガ ${Math.round(p.injury * 100)}%・ツヤ +${Math.round(p.shine * 100)}%`,
+          { class: 'stat' },
+          h('span', { class: 'k' }, '機嫌'),
+          bar(f.loyalty, 'love'),
+          h('span', { class: 'v' }, moodLabel(f.loyalty)),
         ),
-        list,
-        h('div', { class: 'row' }, btn('やめる', () => done(null))),
+        h('div', { class: 'sub', style: 'margin-bottom:6px' }, `好み：${f.base.pref > 0.6 ? '大きなホコ' : f.base.pref < 0.4 ? '穏やかなオス' : 'こだわらない'}${pup?.alive ? `・子の${pup.name}を育てている` : ''}`),
+        h(
+          'div',
+          { class: 'choices' },
+          choice('つがう', st.estrus ? '発情中。いまなら受け入れてくれる。' : 'いまは発情していない。迫っても突っぱねられ、機嫌を損ねる。', { kind: 'court', femaleId: f.id }, { primary: st.estrus }),
+          h('h3', null, 'ご機嫌を取る'),
+          choice('毛づくろいしてあげる', '主のほうから背中をかいてやる。機嫌が大きく良くなる。', { kind: 'tend', femaleId: f.id }),
+          choice('寄り添って守る', `一日そばにつく。ほかのオスを寄せつけず、${pup?.alive ? '子が喧嘩で踏まれることもない。' : '発情中ならまず自分がつがえる。'}`, { kind: 'escort', femaleId: f.id }),
+          h('h3', null, '世話をさせる'),
+          groom('hoko', 'ホコの手入れ', `ツヤが出て見せ合いで有利に。いまのツヤ +${Math.round(p.shine * 100)}%`),
+          groom('wound', '傷の手当て', `傷が癒える。いまのケガ ${Math.round(p.injury * 100)}%`),
+          groom('fur', '毛づくろい', '少し体力が戻る。機嫌の悪いメスは嫌がる。'),
+        ),
+        h('div', { class: 'sub', style: 'margin-top:6px' }, 'どれもその日限り。一頭にかかりきりの日は、ほかのメスへの見張りが手薄になる。'),
+        h('div', { class: 'row' }, canGoBack ? btn('一覧へ戻る', () => done('back')) : null, btn('やめる', () => done(null))),
       );
     });
-    if (pick) w.setPlayerStance({ kind: 'groom', femaleId: pick.id, type: pick.type });
-    this.refresh();
   }
 
   private onKey(e: KeyboardEvent): void {
@@ -818,6 +850,10 @@ class Game implements GameView {
     );
     location.reload();
   }
+}
+
+function moodLabel(loyalty: number): string {
+  return loyalty > 0.6 ? '慕っている' : loyalty > 0.3 ? 'なついている' : loyalty > 0.1 ? 'よそよそしい' : '不満げ';
 }
 
 const game = new Game();

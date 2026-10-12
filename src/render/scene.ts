@@ -451,6 +451,27 @@ export class Scene {
         this.burst(m.x, m.y - 6, e.type === 'wound' ? 'plus' : 'sparkle', e.type === 'hoko' ? 3 : 2);
         break;
       }
+      case 'tend': {
+        const m = this.actors.get(e.maleId);
+        const f = this.actors.get(e.femaleId);
+        if (!m || !f) return;
+        m.tx = f.x + (m.x < f.x ? -14 : 14);
+        m.ty = f.y - 1;
+        m.scriptUntil = this.now + 1400;
+        this.burst(f.x, f.y - 8, 'heart', 1);
+        this.burst(f.x, f.y - 6, 'sparkle', 1);
+        f.bubble = { icon: 'heart', until: this.now + 1500 };
+        break;
+      }
+      case 'soothe': {
+        const m = this.actors.get(e.maleId);
+        if (m) m.bubble = { icon: 'note', until: this.now + 1600 };
+        for (const f of this.world.slotFemales(e.slot)) {
+          const a = this.actors.get(f.id);
+          if (a && Math.random() < 0.5) a.bubble = { icon: 'note', until: this.now + 1200 + Math.random() * 600 };
+        }
+        break;
+      }
       case 'birth': {
         const p = this.actors.get(e.pupId);
         if (p) this.burst(p.x, p.y - 4, 'sparkle', 3);

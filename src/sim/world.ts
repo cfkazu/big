@@ -29,7 +29,14 @@ export type Stance =
   | { kind: 'infiltrate'; slot: number }
   // 主だけが選べる：ハーレムのメスに自分から迫る／世話をさせる
   | { kind: 'court'; femaleId: number }
-  | { kind: 'groom'; femaleId: number; type: GroomType };
+  | { kind: 'groom'; femaleId: number; type: GroomType }
+  // 主がメスのご機嫌を取る
+  | { kind: 'tend'; femaleId: number }
+  | { kind: 'escort'; femaleId: number }
+  | { kind: 'soothe' };
+
+/** 主が一頭のメスにかかりきりになる方針（その日限り） */
+const ONE_DAY_HOLDER_STANCES = new Set(['court', 'groom', 'tend', 'escort', 'soothe']);
 
 export type GroomType = 'hoko' | 'wound' | 'fur';
 
@@ -62,6 +69,8 @@ export type WorldEvent =
   | { kind: 'takeover'; slot: number; newId: number; oldId: number | null }
   | { kind: 'mate'; maleId: number; femaleId: number; how: 'holder' | 'satellite' | 'sneaker' | 'peripheral' }
   | { kind: 'groom'; femaleId: number; maleId: number; type: 'hoko' | 'wound' | 'fur' }
+  | { kind: 'tend'; maleId: number; femaleId: number }
+  | { kind: 'soothe'; maleId: number; slot: number }
   | { kind: 'birth'; motherId: number; pupId: number }
   | { kind: 'crushed'; pupId: number; motherId: number }
   | { kind: 'move'; femaleId: number; from: number | null; to: number }
@@ -162,6 +171,8 @@ export class World {
   history: YearStats[] = [];
   private birthsThisYear = 0;
   private slotCache: Map<number, Individual[]> | null = null;
+  /** 今日プレイヤーがなだめた浜 */
+  private soothedSlot: number | null = null;
   /** 枠ごとの衛星型の数（メスの居場所選びで使う。日の始めに数える） */
   private satelliteCount: number[] = [];
   private paternity = { R: 0, S: 0, F: 0 };
@@ -391,7 +402,8 @@ export class World {
       const k = this.playerStance.kind;
       // 守りに徹すれば広く見張れる。一頭にかまけていると見張りが手薄になる。
       if (k === 'guard') guarding = 1.3;
-      else if (k === 'court' || k === 'groom') guarding = 0.85;
+      else if (k === 'soothe') guarding = 0.95;
+      else if (ONE_DAY_HOLDER_STANCES.has(k)) guarding = 0.85;
     }
     return Math.max(2, Math.round(3 + 13 * holder.condition * guarding * (0.7 + 0.3 * holder.base.vigor)));
   }
@@ -569,7 +581,8 @@ export class World {
     // 4. 見せ合いと取っ組み合い
     yield* this.contestPhase();
 
-    // 5. メスの移動
+    // 5. メスの移動（主がなだめた浜では、出ていくメスが減る）
+    this.playerSoothe();
     this.satelliteCount = this.slotHolders.map(() => 0);
     for (const [s, list] of this.tacticBySlot('S')) this.satelliteCount[s] = list.length;
     for (const f of this.living()) {
@@ -597,7 +610,8 @@ export class World {
 
     // 一頭への働きかけはその日限り。翌日からは浜を守る。
     const pk = this.playerStance.kind;
-    if ((pk === 'court' || pk === 'groom') && this.player) this.playerStance = this.defaultStance(this.player);
+    if (ONE_DAY_HOLDER_STANCES.has(pk) && this.player) this.playerStance = this.defaultStance(this.player);
+    this.soothedSlot = null;
 
     this.day++;
   }
@@ -738,6 +752,7 @@ export class World {
       this.slotHarass[slot] += 1;
       for (const f of this.slotFemales(slot)) {
         const pup = this.get(f.pupId);
+        if (f.id === this.escortedId()) continue; // 主が寄り添っている母子は守られる
         if (pup && pup.alive && this.rng.chance(0.03)) {
           this.kill(pup, 'crushed');
           f.pupId = null;
@@ -807,7 +822,8 @@ export class World {
 
   /** メスの居場所選び。一夫多妻の閾値モデル：魅力が過密の不利益を上回れば、すでに大所帯の主を選ぶ。 */
   private femaleChoose(f: Individual, initial: boolean): void {
-    const moveP = f.pupId ? 0.04 : 0.12;
+    let moveP = f.pupId ? 0.04 : 0.12;
+    if (f.slot !== null && f.slot === this.soothedSlot) moveP *= 0.3;
     if (!initial && f.slot !== null && this.slotHolders[f.slot] != null && !this.rng.chance(moveP)) {
       // 主のいる枠にいる限り、たまにしか考え直さない
       f.loyalty = Math.min(1, f.loyalty + 0.01);
@@ -920,6 +936,55 @@ export class World {
     }
   }
 
+  /** プレイヤーが主で、その日に寄り添っているメス */
+  private escortedId(): number | null {
+    const st = this.playerStance;
+    const p = this.player;
+    if (st.kind !== 'escort' || !p) return null;
+    const s = this.slotOf(p);
+    const f = this.get(st.femaleId);
+    return s !== null && f && f.alive && f.slot === s ? f.id : null;
+  }
+
+  /** 主がハーレムのメスを毛づくろいしてやる。愛着が大きく上がる。 */
+  private playerTend(): void {
+    const p = this.player;
+    const st = this.playerStance;
+    if (!p || st.kind !== 'tend') return;
+    const s = this.slotOf(p);
+    const f = this.get(st.femaleId);
+    if (s === null || !f || !f.alive || f.slot !== s) {
+      this.pushLog(`${f?.name ?? 'そのメス'}はもうハーレムにいない。`, 'player', p.id);
+      return;
+    }
+    f.loyalty = Math.min(1, f.loyalty + 0.15);
+    f.condition = Math.min(1, f.condition + 0.01);
+    p.condition = Math.max(0, p.condition - 0.003);
+    this.dayEvents.push({ kind: 'tend', maleId: p.id, femaleId: f.id });
+    this.pushLog(`${f.name}の背中を毛づくろいしてやった。`, 'player', f.id);
+    this.think(f, 'fTended', { other: p.name });
+    this.think(p, 'tendDone', { other: f.name }, 0.6);
+  }
+
+  /** 主が低い声で鳴いて、ハーレム全体を落ち着かせる */
+  private playerSoothe(): void {
+    const p = this.player;
+    if (!p || this.playerStance.kind !== 'soothe') return;
+    const s = this.slotOf(p);
+    if (s === null) return;
+    this.soothedSlot = s;
+    this.slotHarass[s] *= 0.2;
+    p.condition = Math.max(0, p.condition - 0.004);
+    const fs = this.slotFemales(s);
+    for (const f of fs) {
+      f.loyalty = Math.min(1, f.loyalty + 0.03);
+      this.think(f, 'fSoothed', { other: p.name }, 0.15);
+    }
+    this.dayEvents.push({ kind: 'soothe', maleId: p.id, slot: s });
+    this.pushLog(`低い声で鳴いて、ハーレムの${fs.length}頭を落ち着かせた。`, 'player', p.id);
+    this.think(p, 'sootheDone', {}, 0.5);
+  }
+
   /** プレイヤーが主として、ハーレムのメスに自分から迫る。つがえたメスの ID を返す。 */
   private playerCourt(): number | null {
     const p = this.player;
@@ -960,6 +1025,14 @@ export class World {
 
   private groomingPhase(): void {
     this.playerOrderedGrooming();
+    this.playerTend();
+    const esc = this.get(this.escortedId());
+    if (esc && this.player) {
+      esc.loyalty = Math.min(1, esc.loyalty + 0.06);
+      this.dayEvents.push({ kind: 'tend', maleId: this.player.id, femaleId: esc.id });
+      this.pushLog(`一日じゅう${esc.name}${esc.pupId ? 'と子' : ''}に寄り添って守った。`, 'player', esc.id);
+      this.think(esc, 'fEscorted', { other: this.player.name }, 0.6);
+    }
     for (let s = 0; s < this.slotHolders.length; s++) {
       const h = this.get(this.slotHolders[s]);
       if (!h) continue;
@@ -1004,6 +1077,7 @@ export class World {
     const courted = this.playerCourt();
     // プレイヤーが一頭にかまけている日は、ほかのメスに手が回りにくい
     const busyCourting = this.playerStance.kind === 'court';
+    const escorted = this.escortedId();
     for (const f of estrous) {
       if (this.day === f.estrusStart) this.think(f, 'fEstrus', {}, 0.25);
       const s = f.slot;
@@ -1013,17 +1087,20 @@ export class World {
         const idx = this.slotFemales(s).findIndex((x) => x.id === f.id);
         guarded = idx >= 0 && idx < this.guardCap(h);
       }
+      // 主が寄り添っているメスには、ほかのオスは手を出せない
+      const isEscorted = f.id === escorted;
+      if (isEscorted) guarded = true;
       let matings = 0;
 
       if (h && guarded) {
-        const pHolder = h.id === this.playerId && busyCourting ? 0.35 : 0.65;
+        const pHolder = isEscorted ? 0.9 : h.id === this.playerId && busyCourting ? 0.35 : 0.65;
         if (f.id === courted) matings++;
         else if (!h.foughtToday && h.sperm > 1 && this.rng.chance(pHolder)) {
           this.mate(h, f, 'holder');
           matings++;
         }
         // 衛星型：主が喧嘩している隙に。主が手一杯なときにも、ときどき許される。
-        const sats = satsBySlot.get(s!) ?? [];
+        const sats = isEscorted ? [] : satsBySlot.get(s!) ?? [];
         for (const sat of sats) {
           if (matings >= 2) break;
           const p = h.foughtToday ? 0.5 : 0.1;
@@ -1052,7 +1129,7 @@ export class World {
           if (matings >= 2) break;
           if (!this.rng.chance(0.13)) continue;
           // 紛れ込んだ忍びが多いほど、主は疑い深くなる（頻度依存）
-          const detect = h ? Math.min(0.9, (0.3 + 0.15 * (sneakers.length - 1)) * (h.foughtToday ? 0.3 : 1)) : 0;
+          const detect = isEscorted ? 1 : h ? Math.min(0.9, (0.3 + 0.15 * (sneakers.length - 1)) * (h.foughtToday ? 0.3 : 1)) : 0;
           if (h && this.rng.chance(detect)) {
             this.chase(h, sn, s);
             sn.slot = sn.id === this.playerId ? sn.slot : this.pickSlotWeighted();

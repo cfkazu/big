@@ -12,7 +12,8 @@ export type ThoughtKey =
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
   | 'pupIdle' | 'pupMilk'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
-  | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused';
+  | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
+  | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone';
 
 type Mood = Thought['mood'];
 
@@ -236,6 +237,28 @@ const T: Record<ThoughtKey, Entry> = {
     brash: ['{other}め、つれないやつだ。'],
     timid: ['また今度にしよう……'],
     any: ['{other}に突っぱねられた。', '焦りすぎたか。'],
+  },
+  fTended: {
+    mood: 'love',
+    any: ['ボスが背中をかいてくれた。……悪くない。', '{other}って、意外とやさしいのね。', 'そこそこ、もうちょっと右。', 'こんなボス、はじめて。'],
+  },
+  fEscorted: {
+    mood: 'love',
+    any: ['{other}がずっとそばにいてくれる。安心。', '今日は誰も寄ってこない。', 'この子も、{other}がいれば大丈夫。'],
+  },
+  fSoothed: {
+    mood: 'happy',
+    any: ['ボスの声、落ち着く。', 'ふう、やっと静かになった。', 'この浜にいてもいいかな。'],
+  },
+  tendDone: {
+    mood: 'happy',
+    brash: ['たまにはこういうのも悪くない。'],
+    timid: ['喜んでくれたかな……'],
+    any: ['{other}の機嫌が直ったようだ。', '主たるもの、メスを大事にせねば。'],
+  },
+  sootheDone: {
+    mood: 'neutral',
+    any: ['みんな落ち着いたようだ。', 'ここは安全だと伝わっただろうか。'],
   },
   pupIdle: {
     mood: 'neutral',
