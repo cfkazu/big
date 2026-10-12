@@ -398,6 +398,21 @@ button {
   margin-top: 6px;
 }
 
+.actions .plan {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0;
+  padding: 4px 8px;
+  background: var(--ink);
+  color: var(--gold1);
+  box-shadow: 0 0 0 2px var(--gold0);
+  line-height: 1.4;
+}
+
+.actions .plan .k {
+  color: var(--gray1);
+}
+
 .actions .hint {
   grid-column: 1 / -1;
   color: var(--gray1);

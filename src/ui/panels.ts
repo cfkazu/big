@@ -109,6 +109,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
     return box;
   }
   const on = (k: string) => (st === k ? 'on' : '');
+  box.append(h('div', { class: 'plan' }, h('span', { class: 'k' }, '今日の予定'), h('span', null, planText(w))));
   if (p.base.tactic === 'R') {
     const holder = w.slotOf(p) !== null;
     const hintText = holder
@@ -139,6 +140,23 @@ function actions(g: GameView, p: Individual): HTMLElement {
     );
   }
   return box;
+}
+
+/** いま選んでいる方針を、次に日を進めたときに起きることとして書く */
+function planText(w: World): string {
+  const s = w.playerStance;
+  const holderName = (slot: number) => w.get(w.slotHolders[slot])?.name ?? '―';
+  switch (s.kind) {
+    case 'challenge': {
+      const t = w.get(s.targetId);
+      return t ? `${t.name}に挑む${w.slotOf(t) !== null ? '（勝てば浜とハーレムを奪う）' : ''}` : '挑む相手がいない';
+    }
+    case 'guard': return '浜を守る（見張れるメスが増え、取っ組み合いで粘る）';
+    case 'roam': return 'うろついて、見張りの外のメスをうかがう';
+    case 'rest': return '休む（痩せにくいが、交尾はしない）';
+    case 'follow': return `${holderName(s.slot)}の浜に付き従い、隙を待つ`;
+    case 'infiltrate': return `メスのふりをして${holderName(s.slot)}の浜に紛れ込む`;
+  }
 }
 
 // ───────────────────────── 個体の詳細 ─────────────────────────

@@ -68,6 +68,8 @@ export class Individual {
 
   /** 脂肪の蓄え（0〜1） */
   condition = 0.6;
+  /** 繁殖期の始まりの体力。ホコの張りはこれで決まり、期間中の絶食では縮まない。 */
+  seasonCondition = 0.6;
   /** ケガ（0〜1） */
   injury = 0;
   /** 貯精量（億匹） */
@@ -90,6 +92,8 @@ export class Individual {
   pupId: number | null = null;
   /** 今日すでに争ったか */
   foughtToday = false;
+  /** 最後に負けた日（負けた直後は挑む気が失せる：敗者効果） */
+  lastLossDay = -99;
   /** 繁殖期中の通算 */
   season = { matings: 0, displaysWon: 0, displaysLost: 0, fightsWon: 0, fightsLost: 0, groomed: 0, peakHarem: 0 };
 
@@ -196,7 +200,7 @@ export function hokoDisplay(ind: Individual, year: number): number {
   if (ind.sex !== 'M') return 0;
   const age = ind.ageAt(year);
   const g = growth(age, 7, 0.25) * senescence(age, 12, 0.04);
-  const cond = 0.55 + 0.45 * ind.condition;
+  const cond = 0.55 + 0.45 * ind.seasonCondition;
   const vig = 0.85 + 0.15 * ind.base.vigor;
   return ind.base.hoko * g * cond * vig * (1 + ind.shine);
 }

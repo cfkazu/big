@@ -240,7 +240,8 @@ class Game implements GameView {
         'div',
         null,
         h('h2', null, '誰に挑む？'),
-        h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm。相手の大きさは見た目の推定で、多少の見誤りがある。主に勝てば、その浜とハーレムを奪える。`),
+        h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm。相手の大きさは見た目の推定で、多少の見誤りがある。主に勝てば、その浜とハーレムを奪える。ただし浜の主は守りに入ると手強い。`),
+        h('div', { class: 'sub' }, '挑めるのは 1 日 1 回。選んだ相手とは、次に日を進めたときに勝負になる。'),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );

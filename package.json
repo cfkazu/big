@@ -10,7 +10,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "balance": "vite-node scripts/balance.ts",
-    "autoplay": "node scripts/autoplay.mjs ."
+    "autoplay": "node scripts/autoplay.mjs .",
+    "tenure": "vite-node scripts/tenure.ts"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",

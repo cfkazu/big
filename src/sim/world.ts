@@ -404,9 +404,11 @@ export class World {
   private fillEmptySlots(): void {
     for (let s = 0; s < this.slotHolders.length; s++) {
       if (this.slotHolders[s] != null) continue;
+      // 序列（評判）とホコの大きさの両方で、いちばん強そうな者が空いた浜に入る
+      const score = (m: Individual) => m.elo + 12 * this.hoko(m);
       const cands = this.living()
         .filter((m) => this.eligibleHolder(m) && this.slotOf(m) === null)
-        .sort((a, b) => b.elo - a.elo);
+        .sort((a, b) => score(b) - score(a));
       const m = cands[0];
       if (!m) continue;
       this.slotHolders[s] = m.id;
@@ -450,6 +452,8 @@ export class World {
       ind.season = { matings: 0, displaysWon: 0, displaysLost: 0, fightsWon: 0, fightsLost: 0, groomed: 0, peakHarem: 0 };
       ind.onBeach = true;
       ind.foughtToday = false;
+      ind.lastLossDay = -99;
+      ind.seasonCondition = ind.condition;
       ind.spermStore = [];
       ind.estrusStart = -1;
       ind.birthDay = -1;
@@ -588,7 +592,8 @@ export class World {
       if (!m.onBeach || m.sex !== 'M' || m.base.tactic !== 'R' || this.age(m) < 5 || m.condition < 0.15) continue;
       if (m.id === this.playerId) continue;
       if (this.slotOf(m) !== null) continue;
-      const pChallenge = 0.16 * (0.4 + m.base.boldness) * (0.5 + m.condition);
+      if (this.day - m.lastLossDay < 4) continue;
+      const pChallenge = 0.1 * (0.4 + m.base.boldness) * (0.5 + m.condition);
       if (this.rng.chance(pChallenge)) challengers.push(m);
     }
     this.rng.shuffle(challengers);
@@ -614,8 +619,8 @@ export class World {
     const tolerance = 1.04 + 0.12 * a.base.aggression + a.base.hubris;
     const self = this.hoko(a);
     const holders = this.slotHolders.map((id) => this.get(id)).filter((h): h is Individual => !!h && h.onBeach);
-    // ハーレムの主の中で、勝てそうな相手
-    const winnable = holders.filter((h) => this.perceivedHoko(a, h) / self < tolerance);
+    // ハーレムの主の中で、勝てそうな相手。評判（序列）が自分よりずっと上の主は避ける。
+    const winnable = holders.filter((h) => this.perceivedHoko(a, h) / self < tolerance && h.elo < a.elo + 120);
     if (winnable.length > 0 && this.rng.chance(0.7)) {
       return this.rng.weighted(winnable, (h) => 1 + this.slotFemales(this.slotOf(h)!).length);
     }
@@ -663,9 +668,11 @@ export class World {
       }
     }
 
-    // 見せ合い：相手が十分大きく見えたら引く
-    const thrA = 1.05 + 0.12 * a.base.aggression;
-    const thrB = 1.05 + 0.12 * b.base.aggression;
+    // 見せ合い：相手が十分大きく見えたら引く。
+    // 先住効果：浜の主は簡単には引かず、挑戦者は主の気迫に押されやすい。
+    const resident = slot !== null;
+    const thrA = 1.05 + 0.12 * a.base.aggression - (resident ? 0.08 : 0);
+    const thrB = 1.05 + 0.12 * b.base.aggression + (resident ? 0.08 : 0);
     const aRetreats = a.id !== pid && percAofB / selfA > thrA;
     const bRetreats = b.id !== pid && percBofA / selfB > thrB;
     if (aRetreats || bRetreats) {
@@ -695,7 +702,12 @@ export class World {
 
     // 取っ組み合い
     const pa = fightPower(a, this.year);
-    const pb = fightPower(b, this.year);
+    let pb = fightPower(b, this.year);
+    if (resident) {
+      // 守るものがある側は粘る。プレイヤーが「守る」を選んでいればさらに。
+      pb *= 1.45;
+      if (b.id === pid && this.playerStance.kind === 'guard') pb *= 1.15;
+    }
     const pWinA = 1 / (1 + Math.exp(-4 * Math.log(pa / pb)));
     const aWins = this.rng.chance(pWinA);
     const [w, l] = aWins ? [a, b] : [b, a];
@@ -721,6 +733,7 @@ export class World {
   }
 
   private resolveWin(w: Individual, l: Individual, kind: 'display' | 'fight', slot: number | null): void {
+    l.lastLossDay = this.day;
     const k = kind === 'display' ? 16 : 26;
     const e = 1 / (1 + Math.pow(10, (l.elo - w.elo) / 400));
     w.elo += k * (1 - e);
