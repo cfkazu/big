@@ -504,12 +504,15 @@ describe('子どもたち', () => {
     ww.think = (ind, key, ctx, prob) => {
       const before = ind.thought;
       orig(ind, key, ctx, prob);
-      if (ind.thought !== before && ['pupHelpGroom', 'youngEnvy', 'pupWaitMom', 'pupWaitMate', 'pupCheer'].includes(key)) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
+      if (ind.thought !== before && ['pupHelpGroom', 'youngEnvy', 'pupWaitMom', 'pupWaitMomFur', 'pupWaitMate', 'pupCheer'].includes(key)) said.set(key, [...(said.get(key) ?? []), { text: ind.thought!.text, sex: ind.sex, age: ind.ageAt(w.year) }]);
     };
     for (let y = 0; y < 3; y++) w.simulateYearAuto();
     const help = said.get('pupHelpGroom') ?? [];
     const envy = said.get('youngEnvy') ?? [];
     const wait = said.get('pupWaitMom') ?? [];
+    const waitFur = said.get('pupWaitMomFur') ?? [];
+    expect(waitFur.length).toBeGreaterThan(0);
+    expect(waitFur.every((x) => x.age === 0 && !/ホコ|なめ/.test(x.text))).toBe(true);
     const waitMate = said.get('pupWaitMate') ?? [];
     const cheer = said.get('pupCheer') ?? [];
     expect(waitMate.length).toBeGreaterThan(0);

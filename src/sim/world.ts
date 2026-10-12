@@ -1661,7 +1661,14 @@ export class World {
         }
         continue;
       }
-      if (pup.sex !== 'F' || !this.rng.chance(0.3)) continue;
+      // 毛づくろい・手当て：メスの子はときどき手伝い、そうでなければそばで待つ
+      if (pup.sex !== 'F' || !this.rng.chance(0.3)) {
+        if (this.rng.chance(0.25)) {
+          busy.add(pup.id);
+          this.think(pup, 'pupWaitMomFur', { about: h });
+        }
+        continue;
+      }
       busy.add(pup.id);
       this.think(pup, 'pupHelpGroom', { about: h });
       if (h.id === this.playerId) this.pushLog(`${pup.name}も母の${mother.name}のまねをして、${GROOM_ACT[e.type]}手伝った。`, 'player', pup.id);
@@ -2065,7 +2072,7 @@ export interface HeadRecord {
 const FEMALE_LINE_PRIORITY = [
   'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fShooCrab', 'fShooGull', 'fSplashHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
   'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'pupHelpGroom', 'fAdmire', 'fSoothed', 'newHolderFemale',
-  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'pupCheer', 'youngEnvy', 'pupWaitMom', 'pupWaitMate', 'fIdle',
+  'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'pupCheer', 'youngEnvy', 'pupWaitMom', 'pupWaitMomFur', 'pupWaitMate', 'fIdle',
 ];
 
 /** 血統占有率の節目 */

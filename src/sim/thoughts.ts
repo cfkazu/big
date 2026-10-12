@@ -12,7 +12,7 @@ export type ThoughtKey =
   | 'fMoveCrowded' | 'fMoveAttracted' | 'fGroomHoko' | 'fGroomHokoGroup' | 'fGroomWound' | 'fGroomFur'
   | 'fSplashHoko' | 'fShooCrab' | 'fShooGull' | 'splashedHoko' | 'crabShooed' | 'gullShooed'
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
-  | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'pupWaitMate' | 'pupCheer' | 'youngEnvy'
+  | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'pupWaitMomFur' | 'pupWaitMate' | 'pupCheer' | 'youngEnvy'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
   | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
   | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup' | 'withdrew';
@@ -324,6 +324,11 @@ const T: Record<ThoughtKey, Entry> = {
     mood: 'neutral',
     any: ['お母さん、{other}のお世話で忙しそう。', 'お母さんまだかなあ。', 'お母さん、お仕事中。じゃましちゃだめなんだって。', 'ひまだなあ。砂でもほろう。', 'お母さん、終わったらあそんでくれるかな。', 'おなかすいた……お母さん、まだ？', '{other}のお世話、ながいなあ。'],
   },
+  // 母がボスの毛づくろいや傷の手当てをしているあいだ、手伝わずに待っている子（セリフは上とほぼ同じ）
+  pupWaitMomFur: {
+    mood: 'neutral',
+    any: ['お母さん、{other}のお世話で忙しそう。', 'お母さんまだかなあ。', 'お母さん、お仕事中。じゃましちゃだめなんだって。', 'ひまだなあ。砂でもほろう。', 'お母さん、終わったらあそんでくれるかな。', 'おなかすいた……お母さん、まだ？', '{other}のお世話、ながいなあ。'],
+  },
   // 母がつがうあいだ、子は離れたところで待っている（子のセリフはつがいに触れない）
   pupWaitMate: {
     mood: 'neutral',
@@ -443,7 +448,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   pupIdle: sit('子どものひとりごと', '子ども・冬', null, SEX),
   pupMilk: sit('乳を飲む子ども', '子ども・冬', null, SEX),
   pupHelpGroom: sit('母のまねで世話を手伝う子（メス）', '子ども・冬', 'ボス', []),
-  pupWaitMom: sit('母がボスの世話をしているあいだ待つ子', '子ども・冬', 'ボス', SEX),
+  pupWaitMom: sit('母がボスのホコをなめているあいだ待つ子', '子ども・冬', 'ボス', SEX),
+  pupWaitMomFur: sit('母がボスの毛づくろい・手当てをしているあいだ待つ子', '子ども・冬', 'ボス', SEX),
   pupWaitMate: sit('母がつがうあいだ、離れて待つ子', '子ども・冬', null, SEX),
   pupCheer: sit('勝った父（浜の主）に憧れる子', '子ども・冬', '父・主', SEX),
   youngEnvy: sit('主をうらやむ子・若いオス', '子ども・冬', '主', []),
