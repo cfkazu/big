@@ -931,6 +931,33 @@ canvas.chart {
 .lb-list li.gone .btn { text-decoration: none; }
 .lb-del { margin-left: 6px; vertical-align: middle; }
 
+/* ─── 勝負のカットイン ─── */
+.battle-win { width: min(640px, 94vw); }
+.battle-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.battle-name { color: var(--white); }
+.battle-name.me { color: var(--gold1); }
+.battle-title { color: var(--orange); font-size: 20px; }
+.battle-stage { position: relative; cursor: pointer; }
+.battle-cv { display: block; width: 100%; aspect-ratio: 192 / 84; image-rendering: pixelated; box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--sand2); }
+.battle-pop {
+  position: absolute; left: 50%; top: 18%; transform: translateX(-50%) scale(0.6);
+  font-size: 28px; color: var(--white); text-shadow: 2px 2px 0 var(--rust), 4px 4px 0 var(--ink);
+  opacity: 0; pointer-events: none; white-space: nowrap;
+}
+.battle-pop.show { animation: battle-pop 0.45s steps(4) forwards; }
+@keyframes battle-pop {
+  0% { opacity: 1; transform: translateX(-50%) scale(1.4); }
+  60% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(1); }
+}
+.battle-banner {
+  position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 20px;
+  opacity: 0; pointer-events: none; text-shadow: 2px 2px 0 var(--ink);
+}
+.battle-banner.show { opacity: 1; transition: opacity 0.2s steps(2); }
+.battle-banner.win { color: var(--gold1); }
+.battle-banner.lose { color: var(--gray0); }
+
 @media (max-width: 900px) {
   html, body { overflow-x: clip; overflow-y: visible; height: auto; }
   #app {

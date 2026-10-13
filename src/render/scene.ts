@@ -538,24 +538,7 @@ export class Scene {
 
   /** 体重を絵の大きさに：胴の長さと厚みを段階的に変える */
   private growFor(ind: Individual, id: SpriteId): Grow {
-    const m = bodyMass(ind, this.world.year);
-    const tiers = (edges: number[], out: Grow[]): Grow => {
-      for (let i = 0; i < edges.length; i++) if (m < edges[i]) return out[i];
-      return out[out.length - 1];
-    };
-    switch (id) {
-      case 'male':
-      case 'maleRear':
-        return tiers([1150, 1350, 1600, 1850, 2100], [
-          { cols: -3, rows: -1 }, { cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 4, rows: 1 }, { cols: 6, rows: 2 },
-        ]);
-      case 'subadult':
-        return tiers([600, 850, 1100], [{ cols: -2, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]);
-      case 'female':
-        return tiers([470, 560, 660, 800], [{ cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 1, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]);
-      default:
-        return { cols: 0, rows: 0 };
-    }
+    return bodyGrow(ind, this.world.year, id);
   }
 
   private spriteFor(ind: Individual, a: Actor): { id: SpriteId; coat: CoatKey; collar: boolean; grow: Grow } {
@@ -880,5 +863,27 @@ function moodIcon(m: Individual['thought'] extends infer T ? (T extends { mood: 
     case 'angry': return 'anger';
     case 'scheme': return 'scheme';
     default: return 'dots';
+  }
+}
+
+/** 体重に応じて、スプライトの胴を何列・何行のばすか */
+export function bodyGrow(ind: Individual, year: number, id: SpriteId): Grow {
+  const m = bodyMass(ind, year);
+  const tiers = (edges: number[], out: Grow[]): Grow => {
+    for (let i = 0; i < edges.length; i++) if (m < edges[i]) return out[i];
+    return out[out.length - 1];
+  };
+  switch (id) {
+    case 'male':
+    case 'maleRear':
+      return tiers([1150, 1350, 1600, 1850, 2100], [
+        { cols: -3, rows: -1 }, { cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 4, rows: 1 }, { cols: 6, rows: 2 },
+      ]);
+    case 'subadult':
+      return tiers([600, 850, 1100], [{ cols: -2, rows: 0 }, { cols: 0, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]);
+    case 'female':
+      return tiers([470, 560, 660, 800], [{ cols: -1, rows: 0 }, { cols: 0, rows: 0 }, { cols: 1, rows: 0 }, { cols: 2, rows: 0 }, { cols: 3, rows: 1 }]);
+    default:
+      return { cols: 0, rows: 0 };
   }
 }

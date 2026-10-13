@@ -21,6 +21,7 @@ import { bar, btn, clear, h } from './ui/dom';
 import { installFrames } from './ui/frame';
 import { ask, isModalOpen } from './ui/modal';
 import { openLineBook } from './ui/linebook';
+import { playBattle } from './ui/battle';
 import { initLineStore } from './ui/linestore';
 import { renderLog, renderSide, type GameView, type Tab } from './ui/panels';
 import { portrait } from './ui/portrait';
@@ -41,6 +42,14 @@ class Game implements GameView {
   selectedId: number | null = null;
   logFilter: LogKind | 'all' = 'all';
   logPinned = true;
+  /** 自分の勝負のカットインを見せるか（遊び方の画面で切り替え） */
+  battleAnim = (() => {
+    try {
+      return localStorage.getItem('hamatodo-battle') !== 'off';
+    } catch {
+      return true;
+    }
+  })();
   private stepping = false;
   private dayClock = 0;
   private last = performance.now();
@@ -113,6 +122,12 @@ class Game implements GameView {
       }
       this.scene.applyDay(w.dayEvents, this.dayMs());
       this.refresh();
+      // あなたの勝負は、短いカットインで見せる
+      if (this.battleAnim) {
+        for (const e of w.dayEvents) {
+          if ((e.kind === 'display' || e.kind === 'fight') && (e.aId === w.playerId || e.bId === w.playerId)) await playBattle(w, e, this.speed);
+        }
+      }
       this.toastResult();
       if (w.day < BREED_DAYS && w.emptyHaremDays % 10 === 3) await this.askEmptyHarem();
       if (w.day >= BREED_DAYS) {
@@ -926,7 +941,23 @@ class Game implements GameView {
           'ホコ・精巣・体格・気性・メスの好みは複数の遺伝子の足し算で、子は両親から半分ずつ受け継ぐ。ホコの遺伝子はメスも持っていて息子に渡す。近親交配では有害な劣性遺伝子がそろいやすい。',
         ),
         ...sec('操作', '浜の個体をクリックすると右の欄に詳しく出る。キーボードでは、スペースで進める／止める、Enterで1日進める。'),
-        h('div', { class: 'row' }, btn('閉じる', () => done(), 'primary')),
+        h(
+          'div',
+          { class: 'row' },
+          (() => {
+            const b = btn(this.battleAnim ? '勝負のカットイン：見る' : '勝負のカットイン：見ない', () => {
+              this.battleAnim = !this.battleAnim;
+              b.textContent = this.battleAnim ? '勝負のカットイン：見る' : '勝負のカットイン：見ない';
+              try {
+                localStorage.setItem('hamatodo-battle', this.battleAnim ? 'on' : 'off');
+              } catch {
+                /* 保存できなくても、この回は効く */
+              }
+            }, 'small');
+            return b;
+          })(),
+          btn('閉じる', () => done(), 'primary'),
+        ),
       ),
     );
   }
