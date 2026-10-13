@@ -140,6 +140,30 @@ export interface SeasonSummary {
   playerFights: [number, number];
   conceptions: number;
   playerConceptions: number;
+  /** あなたとつがったメスが、どうなったか（受精の内訳） */
+  playerFert: FertStats;
+  /** 季節の終わりの、一回あたりの射精量（億） */
+  playerEjaculate: number;
+}
+
+export interface FertStats {
+  /** あなたの精子を受け取ったメス */
+  females: number;
+  /** あなたの子を宿した */
+  won: number;
+  /** ほかのオスの子を宿した（精子の量で負けた） */
+  lost: number;
+  /** 宿らなかった */
+  none: number;
+  /** 宿ったが流れた（遺伝子の組み合わせが悪かった） */
+  miscarried: number;
+}
+
+/** その年の目標（年の初めに決め、繁殖期の終わりに確かめる） */
+export interface YearGoal {
+  kind: 'mate' | 'holder';
+  target: number;
+  label: string;
 }
 
 export interface ForageReport {
@@ -209,6 +233,12 @@ export class World {
   stoodFirm = new Map<number, number>();
   /** 群れの誰かがその文を最後に言った日（year*100+day） */
   private saidRecently = new Map<string, number>();
+  playerFert: FertStats = { females: 0, won: 0, lost: 0, none: 0, miscarried: 0 };
+  /** 今年の目標と、続けて達成した年数 */
+  yearGoal: YearGoal | null = null;
+  goalStreak = 0;
+  /** 当主を譲った年（年に一度まで） */
+  abdicatedYear = -1;
   /** プレイヤーの浜にメスがいない日が何日続いているか */
   emptyHaremDays = 0;
   /** 今日の行動をおまかせで決めたか（翌朝またおまかせに戻す） */
@@ -372,6 +402,72 @@ export class World {
     this.holderAuto = true;
     this.playerStance = this.defaultStance(p);
     this.pushLog(`${p.name}として生きる。`, 'player', p.id);
+  }
+
+  /** 年の初めに、いまの立場に合った目標を決める */
+  makeYearGoal(): YearGoal | null {
+    const p = this.player;
+    if (!p) return null;
+    const age = this.age(p);
+    if (age < 4) return null;
+    const s = this.slotOf(p);
+    if (p.base.tactic !== 'R') return (this.yearGoal = { kind: 'mate', target: 3, label: 'メスと3回つがう' });
+    if (s !== null) {
+      const n = this.slotFemales(s).length;
+      const target = Math.max(5, Math.min(30, Math.round(n * 0.7)));
+      return (this.yearGoal = { kind: 'mate', target, label: `メスと${target}回つがう` });
+    }
+    return (this.yearGoal = { kind: 'holder', target: 1, label: '浜を手に入れ、メスを迎える' });
+  }
+
+  /** 今年の目標を達成したか（繁殖期の終わりに呼ぶ）。続けて達成した年数も数える。 */
+  judgeYearGoal(s: SeasonSummary): boolean | null {
+    const g = this.yearGoal;
+    if (!g) return null;
+    const ok = g.kind === 'mate' ? s.playerMatings >= g.target : s.playerWasHolder;
+    this.goalStreak = ok ? this.goalStreak + 1 : 0;
+    this.yearGoal = null;
+    return ok;
+  }
+
+  /** あなたから見た続き柄（息子・娘・孫・父・母・兄弟・姉妹・一族） */
+  kinLabel(ind: Individual): string {
+    const p = this.player;
+    if (!p) return '一族';
+    const male = ind.sex === 'M';
+    if (ind.fatherId === p.id) return male ? '息子' : '娘';
+    const f = this.get(ind.fatherId);
+    const m = this.get(ind.motherId);
+    if (f?.fatherId === p.id || m?.fatherId === p.id) return '孫';
+    if (p.fatherId === ind.id) return '父';
+    if (p.motherId === ind.id) return '母';
+    if (p.fatherId != null && ind.fatherId === p.fatherId) return male ? '兄弟' : '姉妹';
+    return '一族';
+  }
+
+  /** 当主を譲れるのは、繁殖期の初日（まだ 1 日も進めていないとき）だけ。年に一度。 */
+  canAbdicate(): boolean {
+    return this.phase === 'breeding' && this.day === 0 && this.abdicatedYear !== this.year && !!this.player && this.abdicateCandidates().length > 0;
+  }
+
+  /** 譲れる相手：血を引く 4 歳以上のオス（いまの当主を除く） */
+  abdicateCandidates(): Individual[] {
+    return this.heirCandidates().filter((i) => i.id !== this.playerId && this.age(i) >= 4 && i.onBeach);
+  }
+
+  /** 生きているうちに当主を譲る。前の当主はそのまま群れで暮らす。 */
+  abdicate(newId: number): void {
+    const old = this.player;
+    const next = this.get(newId);
+    if (!old || !next || !this.canAbdicate()) return;
+    const h = this.heads[this.heads.length - 1];
+    if (h && h.toYear === null) {
+      h.toYear = this.year;
+      h.retired = true;
+    }
+    this.abdicatedYear = this.year;
+    this.pushLog(`${old.name}は当主を${next.name}に譲った。`, 'dynasty', old.id);
+    this.choosePlayer(newId, false);
   }
 
   /** 跡継ぎ候補：初代の血を引く生きているオス（血の濃い順） */
@@ -767,6 +863,7 @@ export class World {
     this.paternity = { R: 0, S: 0, F: 0 };
     this.conceptionsThisYear = 0;
     this.playerConceptions = 0;
+    this.playerFert = { females: 0, won: 0, lost: 0, none: 0, miscarried: 0 };
     const living = this.living();
     const adultF = living.filter((i) => isAdultFemale(i, this.year)).length;
     const nSlots = Math.max(3, Math.min(9, Math.round(adultF / 6)));
@@ -1684,13 +1781,24 @@ export class World {
     const age = this.age(f);
     const fertility = (0.55 + 0.45 * f.condition) * f.base.vigor * (age > 14 ? 0.6 : 1);
     const pConceive = (1 - Math.exp(-total / SPERM.fertilizationScale)) * Math.min(1, fertility * 1.05);
-    if (!this.rng.chance(pConceive)) return;
+    // あなたの精子を受け取ったメスの行く末を数える
+    const mine = store.some((d) => d.maleId === this.playerId);
+    if (mine) this.playerFert.females++;
+    if (!this.rng.chance(pConceive)) {
+      if (mine) this.playerFert.none++;
+      return;
+    }
     const pick = this.rng.weighted(viable, (d) => d.v)!;
     const father = this.inds.get(pick.maleId)!;
+    if (mine && father.id !== this.playerId) this.playerFert.lost++;
     const embryo = fertilize(makeGamete(f.genome, this.rng), makeGamete(father.genome, this.rng));
     // 逆位ホモ接合は胚致死、有害劣性のホモ接合は流産しやすい
-    if (tacticOf(embryo) === null) return;
-    if (!this.rng.chance(Math.pow(vigorOf(embryo), 1.5))) return;
+    const lostEmbryo = tacticOf(embryo) === null || !this.rng.chance(Math.pow(vigorOf(embryo), 1.5));
+    if (lostEmbryo) {
+      if (father.id === this.playerId) this.playerFert.miscarried++;
+      return;
+    }
+    if (father.id === this.playerId) this.playerFert.won++;
     f.pregnancy = { fatherId: father.id, genome: embryo, conceivedYear: this.year };
     this.conceptionsThisYear++;
     if (father.id === this.playerId) this.playerConceptions++;
@@ -1847,6 +1955,8 @@ export class World {
       playerFights: [p?.season.fightsWon ?? 0, p?.season.fightsLost ?? 0],
       conceptions: this.conceptionsThisYear,
       playerConceptions: this.playerConceptions,
+      playerFert: { ...this.playerFert },
+      playerEjaculate: p ? p.sperm * SPERM.ejaculateFrac : 0,
     };
     for (const ind of this.living()) {
       if (ind.sex === 'F') ind.lastHolderId = ind.slot !== null ? this.slotHolders[ind.slot] ?? null : null;
@@ -1898,6 +2008,24 @@ export class World {
     return { delta: after(1) - p.condition, lo: after(0.85) - p.condition, hi: after(1.15) - p.condition, orca: this.orcaRisk(p, orcaMul, after(1)) };
   }
 
+  /** この冬にあなたが死ぬ見込み（死因ごと）。採餌の方針ごとに変わるのはシャチと飢え。 */
+  deathOutlook(strat: ForageStrategy): { cause: DeathCause; p: number }[] {
+    const p = this.player;
+    if (!p) return [];
+    const age = this.age(p);
+    const { effort, orcaMul } = FORAGE[strat];
+    const { gain, upkeep } = this.forageBudget(p, this.foodNow(), effort);
+    const after = Math.min(1, Math.max(0, p.condition + gain - upkeep));
+    const out: { cause: DeathCause; p: number }[] = [
+      { cause: 'old', p: age > 11 ? 0.07 * (age - 11) : 0 },
+      { cause: 'orca', p: this.orcaRisk(p, orcaMul, after) },
+      { cause: 'starve', p: after < 0.08 ? 0.6 : after < 0.16 ? 0.2 : 0 },
+      { cause: 'wound', p: p.injury * p.injury * 0.6 },
+      { cause: 'sick', p: (1 - p.base.vigor) * 0.25 },
+    ];
+    return out.filter((o) => o.p >= 0.002);
+  }
+
   forage(playerStrategy: ForageStrategy = 'normal'): ForageReport {
     const living = this.living();
     const food = this.foodNow();
@@ -1924,7 +2052,8 @@ export class World {
       };
       if (age === 0) add(0.16 + 0.4 * (1 - ind.condition), 'weak');
       else if (age <= 2) add(0.07, 'sick');
-      else add(ind.sex === 'M' ? 0.06 : 0.045, 'sick');
+      // あなたのキャラは、前触れのない病気では死なない（老い・シャチ・飢え・傷・体の弱さでは死ぬ）
+      else if (ind.id !== this.playerId) add(ind.sex === 'M' ? 0.06 : 0.045, 'sick');
       if (age > 11) add(0.07 * (age - 11), 'old');
       const pOrca = this.orcaRisk(ind, orcaMul);
       if (pDie === 0) add(pOrca, 'orca');
@@ -2038,8 +2167,11 @@ export class World {
     if (ind.id === this.playerId || ind.dynasty > 0 || this.isPlayerHaremFemale(ind)) this.saidRecently.set(raw, now);
     if (ind.id === this.playerId) {
       this.pushLog(`「${ind.thought.text}」`, 'thought', ind.id);
-    } else if (this.isPlayerHaremFemale(ind) || (ind.dynasty > 0 && this.rng.chance(0.3))) {
+    } else if (this.isPlayerHaremFemale(ind)) {
       this.pushLog(`${ind.name}「${ind.thought.text}」`, 'thought', ind.id);
+    } else if (ind.dynasty > 0 && KIN_NOTABLE.has(key) && this.rng.chance(0.5)) {
+      // 一族のつぶやきは、節目のものだけ、続き柄をつけて出す（よその浜での日常は出さない）
+      this.pushLog(`${this.kinLabel(ind)}の${ind.name}「${ind.thought.text}」`, 'thought', ind.id);
     }
   }
 
@@ -2153,12 +2285,21 @@ export interface HeadRecord {
   fromYear: number;
   toYear: number | null;
   cause: DeathCause | null;
+  /** 生きているうちに当主を譲った */
+  retired?: boolean;
   /** 成熟時のホコの素質 */
   potential: number;
   /** 当主になったときの群れの平均 */
   herdMean: number;
   peakHarem: number;
 }
+
+/** 一族のつぶやきのうち、ログに出す節目のもの */
+const KIN_NOTABLE = new Set<string>([
+  'takeHarem', 'takeEmptyBeach', 'loseHarem', 'winFight', 'loseFight', 'abandon',
+  'seasonHappy', 'seasonZero', 'sneakSuccess', 'satelliteSuccess',
+  'fGaveBirth', 'fBigPup', 'fPupLost', 'fFollowHolder', 'orcaEscape',
+]);
 
 /** 自分の欄に出すメスのセリフの優先順（あなたとの関わりが深いものから） */
 const FEMALE_LINE_PRIORITY = [

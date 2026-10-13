@@ -37,7 +37,10 @@ class Game implements GameView {
   mode: Mode = 'title';
   playing = false;
   speed = 1;
-  autoJudge = false;
+  /** 勝負の判断：毎回聞く／楽な勝負は自動で受ける／気質に任せる */
+  judgeMode: 'self' | 'easy' | 'auto' = 'self';
+  /** 「何か起きるまで進める」の途中か */
+  private skipping = false;
   tab: Tab = 'selected';
   selectedId: number | null = null;
   logFilter: LogKind | 'all' = 'all';
@@ -117,7 +120,8 @@ class Game implements GameView {
       const gen = w.runDay();
       let r = gen.next();
       while (!r.done) {
-        const ans: Answer = this.autoJudge ? w.aiAnswer(r.value) : await this.askPrompt(r.value);
+        const ans: Answer =
+          this.judgeMode === 'auto' ? w.aiAnswer(r.value) : this.judgeMode === 'easy' && this.isEasy(r.value) ? 'accept' : await this.askPrompt(r.value);
         r = gen.next(ans);
       }
       this.scene.applyDay(w.dayEvents, this.dayMs());
@@ -137,6 +141,60 @@ class Game implements GameView {
     } finally {
       this.stepping = false;
     }
+  }
+
+  /** 「楽な勝負」：挑まれたが相手のホコがはっきり小さいか、組んでも勝ち目が 7 割半以上 */
+  private isEasy(pr: Prompt): boolean {
+    const w = this.world;
+    const p = w.player;
+    const opp = w.get(pr.opponentId);
+    if (!p || !opp) return false;
+    if (pr.kind === 'escalate') return pr.winChance >= 0.75;
+    return pr.perceivedOpp < pr.self * 0.9 || w.fightOdds(p, opp, pr.slotAtStake, false) >= 0.75;
+  }
+
+  /** 自分に何か起きるまで、日を続けて進める */
+  private async skipToEvent(): Promise<void> {
+    if (this.mode !== 'season' || this.skipping) return;
+    this.playing = false;
+    this.skipping = true;
+    this.renderTop();
+    try {
+      for (let i = 0; i < BREED_DAYS && this.skipping && this.mode === 'season'; i++) {
+        await this.stepDay();
+        if (this.somethingHappened()) break;
+        await new Promise((r) => setTimeout(r, 60));
+      }
+    } finally {
+      this.skipping = false;
+      this.renderTop();
+    }
+  }
+
+  private somethingHappened(): boolean {
+    const w = this.world;
+    const pid = w.playerId;
+    const p = w.player;
+    const s = p ? w.slotOf(p) : null;
+    return w.dayEvents.some((e) => {
+      switch (e.kind) {
+        case 'display':
+        case 'fight':
+          return e.aId === pid || e.bId === pid;
+        case 'takeover':
+          return e.newId === pid || e.oldId === pid;
+        case 'mate':
+          return e.maleId === pid;
+        case 'move':
+          return s !== null && (e.to === s || e.from === s);
+        case 'birth':
+          return w.get(e.pupId)?.fatherId === pid;
+        case 'chase':
+          return e.intruderId === pid;
+        default:
+          return false;
+      }
+    });
   }
 
   /** その日のプレイヤーの勝負の結果を浜の上に出す */
@@ -172,9 +230,11 @@ class Game implements GameView {
     const w = this.world;
     this.mode = 'between';
     const summary = w.endBreedingSeason();
+    const goal = w.yearGoal;
+    const goalOk = w.judgeYearGoal(summary);
     this.scene.applyDay([], 1500);
     this.refresh();
-    const strategy = await this.showSeasonReport(summary);
+    const strategy = await this.showSeasonReport(summary, goal && goalOk !== null ? { label: goal.label, ok: goalOk } : null);
     const rep = w.forage(strategy);
     this.trackBest();
     this.refresh();
@@ -192,12 +252,13 @@ class Game implements GameView {
     this.beginSeason();
   }
 
-  private beginSeason(): void {
+  private beginSeason(briefing = true): void {
     const w = this.world;
     w.startBreedingSeason();
     this.mode = 'season';
     this.scene.applyDay([], 1200);
     this.refresh();
+    if (briefing) void this.showBriefing();
   }
 
   private trackBest(): void {
@@ -238,6 +299,7 @@ class Game implements GameView {
     this.scene.setWorld(w);
     this.scene.applyDay([], 800);
     this.refresh();
+    if (w.day === 0) void this.showBriefing();
   }
 
   // ───────────────────────── 操作 ─────────────────────────
@@ -310,7 +372,7 @@ class Game implements GameView {
             (v.kind === 'displayWin'
               ? '見せ合いで勝てそう（相手はまず引く）'
               : v.kind === 'maybe'
-                ? `見せ合いで引くかは五分・組めば${odds}（合わせて${oddsWord(v.pWin).replace('勝ち目', '約')}）`
+                ? `相手が引く見込み約${Math.round(v.pRetreat * 10)}割・組めば${odds}（合わせて${oddsWord(v.pWin).replace('勝ち目', '約')}）`
                 : v.kind === 'displayLose'
                   ? `相手のほうが大きい・組めば${odds}`
                   : `見せ合いでは決まらない・組めば${odds}`);
@@ -375,6 +437,121 @@ class Game implements GameView {
     this.refresh();
   }
 
+  /** 挑む相手のおすすめ：発情の残っている浜の主を、勝てる見込み × 発情の残っているメスの数で並べる */
+  private recommendTargets(n: number) {
+    const w = this.world;
+    return w
+      .challengeTargets()
+      .filter((t) => t.isHolder && w.slotFemales(t.slot!).length > 0)
+      .map((t) => {
+        const m = w.get(t.id)!;
+        const v = w.challengeVerdict(m);
+        const e = w.slotEstrus(t.slot!);
+        return { t, m, v, e, n: w.slotFemales(t.slot!).length, score: v.pWin * (e.now + e.later) };
+      })
+      .filter((r) => r.v.pWin >= 0.35 && r.e.now + r.e.later > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, n);
+  }
+
+  /** 年の初め：いまの立場、今年の目標、狙える浜。当主を譲るのもここから。 */
+  private async showBriefing(): Promise<void> {
+    const w = this.world;
+    const p = w.player;
+    if (!p || this.mode !== 'season') return;
+    const goal = w.makeYearGoal();
+    const s = w.slotOf(p);
+    const age = w.age(p);
+    const recs = s === null && p.base.tactic === 'R' && age >= 5 ? this.recommendTargets(3) : [];
+    // 一族のうち、いま浜の主になっているオス（当主を譲る候補として目立たせる）
+    const kinHolders = w.canAbdicate() ? w.abdicateCandidates().filter((c) => w.slotOf(c) !== null) : [];
+    const where = s !== null ? `浜の主（メス${w.slotFemales(s).length}頭）` : age < 4 ? 'まだ若い' : p.base.tactic === 'R' ? '浜を持っていない' : tacticLabel(p.base.tactic);
+    const choice = await ask<{ kind: 'go' } | { kind: 'target'; id: number } | { kind: 'abdicate' }>((done) =>
+      h(
+        'div',
+        null,
+        h('h2', null, `${w.displayYear()}年目の繁殖期`),
+        h('div', null, `${p.name}・${age}歳・${where}・ホコ ${hokoDisplay(p, w.year).toFixed(1)}cm（張り ${Math.round(hokoFirmness(p) * 100)}%）・脂肪 ${Math.round(p.condition * 100)}%`),
+        goal
+          ? h('div', { class: 'note', style: 'margin:6px 0' }, `今年の目標：${goal.label}${w.goalStreak > 0 ? `（${w.goalStreak}年続けて達成中）` : ''}`)
+          : null,
+        recs.length
+          ? h(
+              'div',
+              null,
+              h('h3', null, '狙える浜'),
+              h(
+                'div',
+                { class: 'list' },
+                ...recs.map((r) =>
+                  h(
+                    'button',
+                    { class: 'btn item', onclick: () => done({ kind: 'target', id: r.m.id }) },
+                    h('span', null, `♛ ${r.m.name}`, h('span', { class: 'sub' }, ` ハーレム${r.n}頭・これから発情${r.e.later}頭${r.v.temper === 'hot' ? '・気が荒そう' : ''}`)),
+                    h('span', { class: 'sub' }, `合わせて${oddsWord(r.v.pWin).replace('勝ち目', '約')}`),
+                    h('span', null, '挑む'),
+                  ),
+                ),
+              ),
+            )
+          : s === null && p.base.tactic === 'R' && age >= 5
+            ? h('div', { class: 'sub' }, 'いま勝てそうな浜の主は見当たらない。おまかせで蓄え、痩せてきた主を待つのも手。')
+            : null,
+        kinHolders.length
+          ? h('div', { class: 'note', style: 'margin-top:6px' }, `一族の${kinHolders.map((k) => k.name).join('・')}が浜の主になっている。当主を譲れば、その浜から始められる。`)
+          : null,
+        h(
+          'div',
+          { class: 'row' },
+          w.canAbdicate() ? btn('当主を譲る…', () => done({ kind: 'abdicate' }), 'small') : null,
+          btn('このまま始める', () => done({ kind: 'go' }), 'primary'),
+        ),
+      ),
+    );
+    if (choice.kind === 'target') {
+      w.setPlayerStance({ kind: 'challenge', targetId: choice.id });
+      w.pushLog(`明日、${w.get(choice.id)!.name}に挑むことにした。`, 'player', p.id);
+    } else if (choice.kind === 'abdicate') {
+      await this.openAbdicate();
+    }
+    this.refresh();
+  }
+
+  /** 当主を、血を引く一族のオスに譲る（繁殖期の初日だけ、年に一度） */
+  async openAbdicate(): Promise<void> {
+    const w = this.world;
+    const p = w.player;
+    if (!p || !w.canAbdicate()) return;
+    const cands = w
+      .abdicateCandidates()
+      .sort((a, b) => (w.slotOf(b) !== null ? 1 : 0) - (w.slotOf(a) !== null ? 1 : 0) || b.base.hoko - a.base.hoko)
+      .slice(0, 8);
+    const rel = (c: Individual) => {
+      if (c.fatherId === p.id) return '息子';
+      const f = w.get(c.fatherId);
+      const m = w.get(c.motherId);
+      if (f?.fatherId === p.id || m?.fatherId === p.id) return '孫';
+      if (c.fatherId != null && c.fatherId === p.fatherId) return '兄弟';
+      return '一族';
+    };
+    const id = await ask<number | null>((done) => {
+      const box = h('div', { class: 'choices' });
+      for (const c of cands) box.append(this.candidateButton(c, () => done(c.id), rel(c), p));
+      return h(
+        'div',
+        null,
+        h('h2', null, '当主を譲る'),
+        h('div', { class: 'sub' }, `${p.name}はそのまま群れで暮らし、これからはあなたが選んだオスを操作する。譲れるのは繁殖期の初日だけ、年に一度。いま浜の主になっている者を先に並べている。`),
+        box,
+        h('div', { class: 'row' }, btn('やめる', () => done(null))),
+      );
+    });
+    if (id === null) return;
+    w.abdicate(id);
+    this.select(id);
+    this.refresh();
+  }
+
   /** ハーレムが空のまま日が過ぎたら、どうするか聞く。勝てそうな浜の主をひとり勧める。 */
   private async askEmptyHarem(): Promise<void> {
     const w = this.world;
@@ -382,20 +559,7 @@ class Game implements GameView {
     if (!p || w.slotOf(p) === null) return;
     const remaining = w.estrusRemaining();
     // 発情の残っている浜の主だけを勧める
-    const best =
-      remaining === 0
-        ? undefined
-        : w
-            .challengeTargets()
-            .filter((t) => t.isHolder && w.slotFemales(t.slot!).length > 0)
-            .map((t) => {
-              const m = w.get(t.id)!;
-              const v = w.challengeVerdict(m);
-              const e = w.slotEstrus(t.slot!);
-              return { t, m, v, e, n: w.slotFemales(t.slot!).length, score: v.pWin * (e.now + e.later) };
-            })
-            .filter((r) => r.v.pWin >= 0.35 && r.e.now + r.e.later > 0)
-            .sort((a, b) => b.score - a.score)[0];
+    const best = remaining === 0 ? undefined : this.recommendTargets(1)[0];
     const days = w.emptyHaremDays;
     const situation =
       remaining === 0
@@ -412,7 +576,7 @@ class Game implements GameView {
           `おすすめ：♛${best.m.name}（ハーレム${best.n}頭・発情中${best.e.now}・これから${best.e.later}${best.m.condition < 0.4 ? '・痩せてきた' : ''}）。`,
           best.v.kind === 'displayWin'
             ? '見せ合いで勝てそう。'
-            : `${best.v.kind === 'maybe' ? '見せ合いで引くかは五分、' : '見せ合いでは決まらず、'}組めば${oddsWord(best.v.odds)}。`,
+            : `${best.v.kind === 'maybe' ? `相手が引く見込み約${Math.round(best.v.pRetreat * 10)}割、` : '見せ合いでは決まらず、'}組めば${oddsWord(best.v.odds)}。`,
         )
       : remaining > 0
         ? h('div', { class: 'note', style: 'margin:6px 0' }, 'いま勝てそうな浜の主は見当たらない（引かせる見込みと組んで勝つ見込みを合わせて3割半ばに届かない）。海で蓄えて、痩せてきた主を待つのも手。')
@@ -703,7 +867,14 @@ class Game implements GameView {
     const controls = h(
       'div',
       { class: 'controls' },
-      btn(this.autoJudge ? '判断：気質任せ' : '判断：自分で', () => { this.autoJudge = !this.autoJudge; this.renderTop(); }, `small ${this.autoJudge ? 'on' : ''}`),
+      btn(
+        this.judgeMode === 'auto' ? '判断：気質任せ' : this.judgeMode === 'easy' ? '判断：楽な勝負は自動' : '判断：自分で',
+        () => {
+          this.judgeMode = this.judgeMode === 'self' ? 'easy' : this.judgeMode === 'easy' ? 'auto' : 'self';
+          this.renderTop();
+        },
+        `small ${this.judgeMode !== 'self' ? 'on' : ''}`,
+      ),
       btn('セリフ帳', () => void openLineBook(), 'small'),
       btn('遊び方', () => void this.showHelp(), 'small'),
     );
@@ -722,12 +893,19 @@ class Game implements GameView {
       this.playing ? 'on' : 'primary',
     );
     const next = btn('次の日へ ▸', () => void this.stepDay(), '');
+    const skip = btn(
+      this.skipping ? h('span', null, '❚❚', h('span', { class: 'wide-only' }, ' 止める')) : h('span', null, '⏩', h('span', { class: 'wide-only' }, ' 何か起きるまで')),
+      () => (this.skipping ? (this.skipping = false) : void this.skipToEvent()),
+      this.skipping ? 'on' : '',
+    );
+    skip.title = '自分に何か起きる（勝負・つがい・メスの出入り・子の誕生）まで、日を続けて進める';
     const speeds = h('div', { class: 'speeds' }, h('span', { class: 'sub' }, '速さ'));
     for (const s of [1, 2, 4]) {
       speeds.append(btn(`×${s}`, () => { this.speed = s; this.renderTop(); }, `small ${this.speed === s ? 'on' : ''}`));
     }
     for (const b of [play, next, ...speeds.querySelectorAll('button')]) (b as HTMLButtonElement).disabled = !can;
-    bar.append(play, next, speeds);
+    skip.disabled = !can && !this.skipping;
+    bar.append(play, next, skip, speeds);
   }
 
   // ───────────────────────── 画面 ─────────────────────────
@@ -808,8 +986,9 @@ class Game implements GameView {
     w.choosePlayer(pick, true);
     this.selectedId = pick;
     this.scene.selectedId = pick;
-    this.beginSeason();
+    this.beginSeason(false);
     await this.showIntro();
+    await this.showBriefing();
   }
 
   private candidateButton(c: Individual, onclick: () => void, extra?: string, compareTo?: Individual, note?: string, compact = false): HTMLElement {
@@ -832,12 +1011,15 @@ class Game implements GameView {
           null,
           h('span', { class: 'stars' }, starText(potentialStars(c.base.hoko, w.herdHokoMean()))),
           ` ホコの素質 ${c.base.hoko.toFixed(1)}cm`,
-          compareTo
-            ? h('span', { class: c.base.hoko >= compareTo.base.hoko ? 'up' : 'down' }, `（先代より${c.base.hoko >= compareTo.base.hoko ? '+' : ''}${(c.base.hoko - compareTo.base.hoko).toFixed(1)}）`)
-            : null,
+          // 群れの平均と比べる。先代を超えていれば、それも知らせる。
+          (() => {
+            const d = c.base.hoko - w.herdHokoMean();
+            return h('span', { class: d >= 0 ? 'up' : 'sub' }, `（群れの平均より${d >= 0 ? '+' : ''}${d.toFixed(1)}）`);
+          })(),
+          compareTo && c.base.hoko > compareTo.base.hoko ? h('span', { class: 'tag gold', style: 'margin-left:4px' }, '先代超え') : null,
         ),
         h('div', { class: 'sub' }, `精巣 ${Math.round(c.base.testis)}g・体重 ${Math.round(c.base.body)}kg（成熟時）・${temper}${bold ? '・' + bold : ''}`),
-        compact ? null : h('div', { class: 'sub' }, `活力 ${Math.round(c.base.vigor * 100)}%　母 ${mother?.name ?? '不明'}／父 ${father?.name ?? '不明'}`),
+        compact ? null : h('div', { class: 'sub' }, `活力 ${Math.round(c.base.vigor * 100)}%${c.base.vigor < 0.85 ? '（体が弱く、冬に死にやすい）' : ''}　母 ${mother?.name ?? '不明'}／父 ${father?.name ?? '不明'}`),
         compact
           ? null
           : h(
@@ -1014,7 +1196,7 @@ class Game implements GameView {
     });
   }
 
-  private showSeasonReport(s: SeasonSummary): Promise<ForageStrategy> {
+  private showSeasonReport(s: SeasonSummary, goal: { label: string; ok: boolean } | null): Promise<ForageStrategy> {
     const w = this.world;
     const p = w.player!;
     const line = (k: string, v: string) => h('tr', null, h('td', null, k), h('td', { class: 'r' }, v));
@@ -1032,6 +1214,17 @@ class Game implements GameView {
         null,
         h('h2', null, `${w.displayYear(s.year)}年目の繁殖期が終わった`),
         p.thought ? h('div', { class: 'thought' }, `${p.name}「${p.thought.text}」`) : null,
+        // ほかのオスに負けた分が多ければ、なぜかを一言
+        s.playerFert.lost > s.playerFert.won && s.playerFert.lost >= 2
+          ? h('div', { class: 'sub', style: 'margin-top:4px' }, 'メスは何頭ものオスとつがい、精子の多いオスの子を宿しやすい。つがうほど一回の射精量は減るので、寄り添って守る・休んで精子をためる、が効く。')
+          : null,
+        goal
+          ? h(
+              'div',
+              { class: goal.ok ? 'note' : 'sub', style: 'margin-top:6px' },
+              `今年の目標「${goal.label}」…${goal.ok ? `達成！${w.goalStreak > 1 ? `（${w.goalStreak}年続けて）` : ''}` : '届かなかった'}`,
+            )
+          : null,
         h(
           'table',
           { class: 'mini', style: 'margin:8px 0' },
@@ -1040,9 +1233,30 @@ class Game implements GameView {
           line('見せ合い', `${s.playerDisplays[0]}勝${s.playerDisplays[1]}敗`),
           line('取っ組み合い', `${s.playerFights[0]}勝${s.playerFights[1]}敗`),
           line('あなたの子を宿したメス', `${s.playerConceptions}頭（群れ全体で${s.conceptions}頭）`),
+          s.playerFert.females > 0
+            ? line(
+                '　つがったメスの内訳',
+                `${s.playerFert.females}頭：あなたの子${s.playerFert.won}・ほかのオスの子${s.playerFert.lost}・宿らず${s.playerFert.none}${s.playerFert.miscarried ? `・流れた${s.playerFert.miscarried}` : ''}`,
+              )
+            : null,
+          s.playerMatings > 0 ? line('　一回の射精量（季節の終わり）', `${Math.round(s.playerEjaculate)}億`) : null,
           line('脂肪', `${Math.round(p.condition * 100)}%`),
         ),
         h('h3', null, '採餌期の過ごし方'),
+        (() => {
+          // この冬に死ぬ見込み（ふつうに過ごした場合）。あなたは前触れのない病気では死なない。
+          const label: Partial<Record<string, string>> = { old: '老い', orca: 'シャチ', starve: '飢え', wound: '傷の悪化', sick: '体の弱さ' };
+          const risks = w.deathOutlook('normal');
+          const total = 1 - risks.reduce((a, r) => a * (1 - r.p), 1);
+          const text = risks.length
+            ? risks.map((r) => `${label[r.cause]}${(r.p * 100).toFixed(r.p < 0.1 ? 1 : 0)}%`).join('・')
+            : 'ほとんどない';
+          return h(
+            'div',
+            { class: total >= 0.1 ? 'note' : 'sub', style: 'margin-bottom:4px' },
+            `この冬に死ぬ見込み（ふつうに過ごした場合）：${text}。シャチと飢えは過ごし方で変わる。あなたのキャラは、前触れのない病気では死なない。`,
+          );
+        })(),
         // 脂肪が満タンなら、どれを選んでも増えない。違いはシャチに襲われる見込みだけ。
         p.condition >= 0.99
           ? h('div', { class: 'note', style: 'margin-bottom:4px' }, '脂肪はもう満タンなので、どれを選んでも増えない。違いはシャチに襲われる見込みだけ。「慎重に」がいちばん安全。')
@@ -1132,7 +1346,7 @@ class Game implements GameView {
         'div',
         null,
         h('h2', null, '跡継ぎを選ぶ'),
-        h('div', { class: 'sub' }, `${prev?.name ?? '当主'}の血を引くオスたち。血の濃い順。星はホコの素質を群れの平均と比べたもの（★★★が平均）。素質の高い子を継がせるほど、一族は代を重ねて大きくなる。戦略の型も遺伝子で決まるので、衛星型や忍び型の父からも主型の息子が生まれる。`),
+        h('div', { class: 'sub' }, `${prev?.name ?? '当主'}の血を引くオスたち。血の濃い順。星はホコの素質を群れの平均と比べたもの（★★★が平均）。素質の高い子を継がせるほど、一族は代を重ねて大きくなる。子の素質は両親の平均から群れの平均の側へ少し戻る（平均への回帰）ので、先代より小さく出るのはふつうのこと。戦略の型も遺伝子で決まるので、衛星型や忍び型の父からも主型の息子が生まれる。`),
         box,
       );
     });

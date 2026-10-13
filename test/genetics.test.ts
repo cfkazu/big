@@ -691,3 +691,65 @@ describe('セリフの条件', () => {
     expect(bad).toEqual([]);
   });
 });
+
+describe('第1弾：当主を譲る・病死・目標・受精の内訳', () => {
+  it('あなたのキャラは、前触れのない病気では死なない', () => {
+    const w = World.create(1, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    const p = w.player!;
+    p.base.vigor = 1;
+    p.injury = 0;
+    p.condition = 1;
+    // 前触れのない病気のくじ（大人のオス 6%）だけを必ず当たりにする
+    const rng = (w as unknown as { rng: { chance(q: number): boolean } }).rng;
+    const orig = rng.chance.bind(rng);
+    rng.chance = (q: number) => (q === 0.06 ? true : orig(q));
+    w.forage('cautious');
+    expect(p.deathCause).not.toBe('sick');
+    // ほかのオスはそのくじで死ぬ
+    expect([...w.inds.values()].some((i) => i.id !== p.id && i.deathCause === 'sick')).toBe(true);
+  });
+
+  it('死ぬ見込みは死因ごとに出る', () => {
+    const w = World.create(3, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.player!.base.vigor = 0.6;
+    const o = w.deathOutlook('normal');
+    expect(o.find((r) => r.cause === 'sick')!.p).toBeCloseTo(0.1, 5);
+  });
+
+  it('繁殖期の初日に、血を引くオスへ当主を譲れる（年に一度）', () => {
+    const w = World.create(9, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    for (let y = 0; y < 6; y++) w.simulateYearAuto();
+    w.startBreedingSeason();
+    const old = w.player!;
+    expect(w.canAbdicate()).toBe(true);
+    const next = w.abdicateCandidates()[0];
+    expect(w.kinLabel(next)).not.toBe('');
+    w.abdicate(next.id);
+    expect(w.playerId).toBe(next.id);
+    expect(old.alive).toBe(true);
+    expect(w.heads[w.heads.length - 2].retired).toBe(true);
+    expect(w.canAbdicate()).toBe(false);
+  });
+
+  it('今年の目標が決まり、つがったメスの内訳がそろう', () => {
+    const w = World.create(21, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const goal = w.makeYearGoal();
+    expect(goal).not.toBeNull();
+    while (w.day < 40) {
+      const g = w.runDay();
+      let r = g.next();
+      while (!r.done) r = g.next(w.aiAnswer(r.value));
+    }
+    const s = w.endBreedingSeason();
+    const f = s.playerFert;
+    expect(f.won + f.lost + f.none + f.miscarried).toBeLessThanOrEqual(f.females);
+    expect(f.won).toBe(s.playerConceptions);
+    const ok = w.judgeYearGoal(s);
+    expect(typeof ok).toBe('boolean');
+  });
+});

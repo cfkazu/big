@@ -36,6 +36,7 @@ export interface GameView {
   openSlotPick(kind: 'follow' | 'infiltrate'): void;
   openAttend(femaleId?: number): void;
   fastForward(): void;
+  openAbdicate(): void;
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -93,7 +94,12 @@ function playerCard(g: GameView): HTMLElement {
     stat('戦績', h('span', { class: 'sub' }, rank ? `見せ合い・取っ組み合いの勝ち負け順・${rank.of}頭中` : '―'), rank ? `${rank.rank}位` : '―'),
     stat('ハーレム', bar(cap ? Math.min(1, harem / cap) : 0, 'love'), slot !== null ? `${harem}頭/見張${cap}` : 'なし'),
     p.season.peakHarem > 0 || slot !== null ? stat('　今季', h('span', { class: 'sub' }, slot !== null && harem > 0 ? `浜で${haremOrder(w, slot)}番目の大所帯` : ''), `最大${Math.max(p.season.peakHarem, harem)}頭`) : null,
-    stat('今季交尾', h('span'), `${p.season.matings}回`),
+    stat(
+      '今季交尾',
+      // 今年の目標（年の初めに決まる）
+      h('span', { class: w.yearGoal?.kind === 'mate' && p.season.matings >= w.yearGoal.target ? 'up' : 'sub' }, w.yearGoal ? `目標：${w.yearGoal.label}` : ''),
+      `${p.season.matings}回`,
+    ),
     stat('子', h('span'), `${p.childIds.length}頭`),
   );
   // 前の日にハーレムのメスが言ったことがあれば、自分のつぶやきより優先して出す
@@ -361,7 +367,7 @@ function genomeView(ind: Individual): HTMLElement {
     del.append(h('i', { class: isHom ? 'hom' : n > 0 ? 'het' : '' }));
   }
   box.append(
-    h('div', { class: 'sub', style: 'margin-top:4px' }, `有害劣性：保因${het}・発症${hom}　活力 ${pct(ind.base.vigor)}`),
+    h('div', { class: 'sub', style: 'margin-top:4px' }, `有害劣性：保因${het}・発症${hom}　活力 ${pct(ind.base.vigor)}${ind.base.vigor < 0.85 ? '（体が弱い）' : ''}`),
     del,
   );
   return box;
@@ -470,6 +476,9 @@ function dynastyView(g: GameView): HTMLElement {
   }
   // 歴代当主
   box.append(h('h3', null, '歴代当主'));
+  if (w.canAbdicate()) {
+    box.append(h('div', { class: 'row', style: 'justify-content:flex-start;margin:0 0 6px' }, btn('当主を譲る…', () => g.openAbdicate(), 'small'), h('span', { class: 'sub' }, '繁殖期の初日だけ、年に一度')));
+  }
   const heads = h('div', { class: 'heads' });
   w.heads.forEach((hd, i) => {
     const ind = w.get(hd.id);
@@ -482,7 +491,7 @@ function dynastyView(g: GameView): HTMLElement {
         'button',
         { class: `btn small item head ${hd.id === w.playerId ? 'on' : ''}`, onclick: () => g.select(hd.id) },
         h('span', null, h('span', { class: 'sub' }, `${ordinal(hd.generation)} `), hd.name, h('span', { class: 'sub' }, ` ${span}`)),
-        h('span', { class: 'sub' }, `ハーレム最大${hd.peakHarem}・子${ind?.childIds.length ?? 0}${hd.cause ? `・${causeLabel(hd.cause)}` : ''}`),
+        h('span', { class: 'sub' }, `ハーレム最大${hd.peakHarem}・子${ind?.childIds.length ?? 0}${hd.retired ? '・当主を譲った' : hd.cause ? `・${causeLabel(hd.cause)}` : ''}`),
         h('span', null, `${hd.potential.toFixed(1)}cm`, h('span', { class: diff > 0 ? 'up' : diff < 0 ? 'down' : 'sub' }, i > 0 ? ` ${diff >= 0 ? '+' : ''}${diff.toFixed(1)}` : ''), h('span', { class: 'sub' }, `（群れ比${vsHerd >= 0 ? '+' : ''}${vsHerd.toFixed(1)}）`)),
       ),
     );
