@@ -10,7 +10,7 @@ import {
   type Individual,
 } from '../sim/individual';
 import { bloodEstimate, hokoPotential, potentialStars, starText } from '../sim/lineage';
-import { BREED_DAYS, GROOM_ACT, MILESTONES, causeLabel, type LogKind, type World } from '../sim/world';
+import { BREED_DAYS, GROOM_ACT, MILESTONES, causeLabel, type LogKind, World } from '../sim/world';
 import { P } from '../render/palette';
 import { lineChart } from './chart';
 import { bar, btn, clear, h } from './dom';
@@ -479,6 +479,24 @@ function dynastyView(g: GameView): HTMLElement {
   if (w.bestHoko) {
     const b = w.bestHoko;
     box.append(h('div', { class: 'sub', style: 'margin-top:4px' }, '一族最高の素質：', nameLink(g, w.get(b.id)), ` ${b.value.toFixed(1)}cm（${w.displayYear(b.year)}年目）`));
+  }
+  // 育ちゆく一族のオス：冬を越せるか
+  const young = w.youngKin().slice(0, 6);
+  if (young.length && w.player) {
+    box.append(h('h3', null, '育ちゆく一族のオス'));
+    for (const k of young) {
+      const risk = World.totalRisk(w.winterRisk(k));
+      box.append(
+        h(
+          'div',
+          { class: 'sub' },
+          nameLink(g, k),
+          ` ${w.kinLabel(k)}・${w.age(k)}歳・素質${k.base.hoko.toFixed(1)}cm・`,
+          h('span', { class: risk >= 0.2 ? 'down' : '' }, `この冬を越せない見込み ${Math.round(risk * 100)}%`),
+        ),
+      );
+    }
+    box.append(h('div', { class: 'sub', style: 'margin-top:2px' }, '季節の終わりに、2頭まで冬に連れていける（餌場を教えてシャチから守る）。'));
   }
   // 歴代当主
   box.append(h('h3', null, '歴代当主'));

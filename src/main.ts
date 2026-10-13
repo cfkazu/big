@@ -5,6 +5,8 @@ import { bodyMass, hokoDisplay, hokoFirmness, tacticLabel, testisMass, type Indi
 import {
   BREED_DAYS,
   World,
+  MAX_GUARDED,
+  GUARD_COST,
   causeLabel,
   type Answer,
   type ForageReport,
@@ -240,8 +242,9 @@ class Game implements GameView {
     const goalOk = w.judgeYearGoal(summary);
     this.scene.applyDay([], 1500);
     this.refresh();
-    const strategy = await this.showSeasonReport(summary, goal && goalOk !== null ? { label: goal.label, ok: goalOk } : null);
-    const rep = w.forage(strategy);
+    const { strategy, guard } = await this.showSeasonReport(summary, goal && goalOk !== null ? { label: goal.label, ok: goalOk } : null);
+    if (guard.length) w.pushLog(`この冬は${guard.map((id) => w.get(id)?.name).join('と')}を連れて海へ出る。`, 'dynasty', guard[0]);
+    const rep = w.forage(strategy, guard);
     this.trackBest();
     this.refresh();
     // 沖でのシャチの襲撃を見せてから報告を出す
@@ -472,6 +475,11 @@ class Game implements GameView {
     const recs = s === null && p.base.tactic === 'R' && age >= 5 ? this.recommendTargets(3) : [];
     // 一族のうち、いま浜の主になっているオス（当主を譲る候補として目立たせる）
     const kinHolders = w.canAbdicate() ? w.abdicateCandidates().filter((c) => w.slotOf(c) !== null) : [];
+    // 譲りどき：当主が老いてきた、または当主よりホコの大きい育ちきった一族がいる
+    const myHoko = hokoDisplay(p, w.year);
+    const better = w.canAbdicate() ? w.abdicateCandidates().filter((c) => w.age(c) >= 6 && hokoDisplay(c, w.year) > myHoko * 1.03) : [];
+    const oldRisk = w.winterRisk(p, 'normal').find((r) => r.cause === 'old')?.p ?? 0;
+    const timeToHand = w.canAbdicate() && (oldRisk >= 0.14 || better.length > 0);
     const where = s !== null ? `浜の主（メス${w.slotFemales(s).length}頭）` : age < 4 ? 'まだ若い' : p.base.tactic === 'R' ? '浜を持っていない' : tacticLabel(p.base.tactic);
     const choice = await ask<{ kind: 'go' } | { kind: 'target'; id: number } | { kind: 'abdicate' }>((done) =>
       h(
@@ -507,10 +515,17 @@ class Game implements GameView {
         kinHolders.length
           ? h('div', { class: 'note', style: 'margin-top:6px' }, `一族の${kinHolders.map((k) => k.name).join('・')}が浜の主になっている。当主を譲れば、その浜から始められる。`)
           : null,
+        timeToHand
+          ? h(
+              'div',
+              { class: 'note', style: 'margin-top:6px' },
+              `そろそろ譲りどきかもしれない。${oldRisk >= 0.14 ? `${p.name}はこの冬、老いで死ぬ見込みが約${Math.round(oldRisk * 100)}%ある。` : ''}${better.length ? `${better.slice(0, 2).map((b) => `${w.kinLabel(b)}の${b.name}（いまのホコ ${hokoDisplay(b, w.year).toFixed(1)}cm）`).join('・')}のほうが、いまのホコが大きい。` : ''}`,
+            )
+          : null,
         h(
           'div',
           { class: 'row' },
-          w.canAbdicate() ? btn('当主を譲る…', () => done({ kind: 'abdicate' }), 'small') : null,
+          w.canAbdicate() ? btn('当主を譲る…', () => done({ kind: 'abdicate' }), timeToHand ? '' : 'small') : null,
           btn('このまま始める', () => done({ kind: 'go' }), 'primary'),
         ),
       ),
@@ -592,11 +607,17 @@ class Game implements GameView {
     };
     const id = await ask<number | null>((done) => {
       const box = h('div', { class: 'choices' });
-      for (const c of cands) box.append(this.candidateButton(c, () => done(c.id), rel(c), p));
+      for (const c of cands) {
+        const a = w.age(c);
+        const grow = a < 7 ? `あと${7 - a}年で育ちきる（いま${hokoDisplay(c, w.year).toFixed(1)}cm → 素質${c.base.hoko.toFixed(1)}cm）` : '育ちきっている';
+        box.append(this.candidateButton(c, () => done(c.id), rel(c), p, grow));
+      }
+      const headRisk = World.totalRisk(w.winterRisk(p, 'normal'));
       return h(
         'div',
         null,
         h('h2', null, '当主を譲る'),
+        h('div', { class: 'note', style: 'margin-bottom:4px' }, `いまの当主 ${p.name}：${w.age(p)}歳・いまのホコ ${hokoDisplay(p, w.year).toFixed(1)}cm・脂肪 ${Math.round(p.condition * 100)}%・${w.slotOf(p) !== null ? `浜の主（メス${w.slotFemales(w.slotOf(p)!).length}頭）` : '浜なし'}・この冬に死ぬ見込み 約${Math.round(headRisk * 100)}%`),
         h('div', { class: 'sub' }, `${p.name}はそのまま群れで暮らし、これからはあなたが選んだオスを操作する。譲れるのは繁殖期の初日だけ、年に一度。いま浜の主になっている者を先に並べている。`),
         box,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
@@ -1269,7 +1290,7 @@ class Game implements GameView {
     });
   }
 
-  private showSeasonReport(s: SeasonSummary, goal: { label: string; ok: boolean } | null): Promise<ForageStrategy> {
+  private showSeasonReport(s: SeasonSummary, goal: { label: string; ok: boolean } | null): Promise<{ strategy: ForageStrategy; guard: number[] }> {
     const w = this.world;
     const p = w.player!;
     const line = (k: string, v: string) => h('tr', null, h('td', null, k), h('td', { class: 'r' }, v));
@@ -1279,9 +1300,39 @@ class Game implements GameView {
       const range = Math.round(o.lo * 100) === Math.round(o.hi * 100) ? `${sign(o.delta)}%` : `${sign(o.lo)}〜${sign(o.hi)}%`;
       return `見込み：脂肪 ${range}（来季のホコの張り 約${Math.round((0.55 + 0.45 * Math.min(1, Math.max(0, p.condition + o.delta))) * 100)}%）・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
     };
-    return ask<ForageStrategy>((done) => {
+    return ask<{ strategy: ForageStrategy; guard: number[] }>((done) => {
+      const guard: number[] = [];
       const choice = (key: ForageStrategy, label: string, desc: string) =>
-        h('button', { class: `btn choice ${key === 'normal' ? 'primary' : ''}`, onclick: () => done(key) }, h('div', { class: 'btn-body' }, h('div', { class: 'name' }, label), h('div', { class: 'sub' }, desc)));
+        h('button', { class: `btn choice ${key === 'normal' ? 'primary' : ''}`, onclick: () => done({ strategy: key, guard: [...guard] }) }, h('div', { class: 'btn-body' }, h('div', { class: 'name' }, label), h('div', { class: 'sub' }, desc)));
+      // 冬に連れていく子（あなたの血を引く幼いオス、2 頭まで）
+      const kids = w.youngKin().slice(0, 6);
+      const kidBox = h('div', { class: 'list' });
+      const pct1 = (v: number) => `${Math.round(v * 100)}%`;
+      const drawKids = () => {
+        clear(kidBox);
+        for (const k of kids) {
+          const on = guard.includes(k.id);
+          const now = World.totalRisk(w.winterRisk(k));
+          const safe = World.totalRisk(w.winterRisk(k, undefined, true));
+          kidBox.append(
+            h(
+              'button',
+              {
+                class: `btn item ${on ? 'on' : ''}`,
+                onclick: () => {
+                  if (on) guard.splice(guard.indexOf(k.id), 1);
+                  else if (guard.length < MAX_GUARDED) guard.push(k.id);
+                  drawKids();
+                },
+              },
+              h('span', null, `${on ? '✓ ' : ''}${w.kinLabel(k)}の${k.name}`, h('span', { class: 'sub' }, ` ${w.age(k)}歳`), ' ', h('span', { class: 'stars' }, starText(potentialStars(k.base.hoko, w.herdHokoMean())))),
+              h('span', { class: now >= 0.2 ? 'down' : 'sub' }, `冬を越せない見込み ${pct1(now)}`),
+              h('span', { class: 'up' }, `連れていけば ${pct1(safe)}`),
+            ),
+          );
+        }
+      };
+      drawKids();
       return h(
         'div',
         null,
@@ -1315,6 +1366,15 @@ class Game implements GameView {
           s.playerMatings > 0 ? line('　一回の射精量（季節の終わり）', `${Math.round(s.playerEjaculate)}億`) : null,
           line('脂肪', `${Math.round(p.condition * 100)}%`),
         ),
+        kids.length
+          ? h(
+              'div',
+              null,
+              h('h3', null, `冬に連れていく子（${MAX_GUARDED}頭まで）`),
+              h('div', { class: 'sub' }, `連れていった子は餌場を教わって太りやすく、シャチからも守られる。そのぶん、あなたが食べる量は1頭につき${Math.round(GUARD_COST * 100)}%減る。`),
+              kidBox,
+            )
+          : null,
         h('h3', null, '採餌期の過ごし方'),
         (() => {
           // この冬に死ぬ見込み（ふつうに過ごした場合）。あなたは前触れのない病気では死なない。

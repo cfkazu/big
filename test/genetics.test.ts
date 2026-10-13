@@ -805,3 +805,29 @@ describe('よその浜のメスを誘う', () => {
     expect(s.kind).toBe('lure');
   });
 });
+
+describe('冬に子を連れていく', () => {
+  function make() {
+    const w = World.create(9, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    for (let y = 0; y < 4; y++) w.simulateYearAuto();
+    w.startBreedingSeason();
+    w.endBreedingSeason();
+    return w;
+  }
+
+  it('連れていくと子の冬の見込みが下がり、子は太り、あなたの食べる量は減る', () => {
+    const a = make();
+    const b = make();
+    const kids = a.youngKin();
+    expect(kids.length).toBeGreaterThan(0);
+    const k = kids[0];
+    expect(World.totalRisk(a.winterRisk(k, undefined, true))).toBeLessThan(World.totalRisk(a.winterRisk(k)));
+    a.forage('normal', [k.id]);
+    b.forage('normal', []);
+    const ka = a.get(k.id)!;
+    const kb = b.get(k.id)!;
+    if (ka.alive && kb.alive) expect(ka.condition).toBeGreaterThanOrEqual(kb.condition);
+    if (a.player!.alive && b.player!.alive && b.player!.condition < 1) expect(a.player!.condition).toBeLessThan(b.player!.condition);
+  });
+});

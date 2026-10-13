@@ -2103,22 +2103,52 @@ export class World {
   /** この冬にあなたが死ぬ見込み（死因ごと）。採餌の方針ごとに変わるのはシャチと飢え。 */
   deathOutlook(strat: ForageStrategy): { cause: DeathCause; p: number }[] {
     const p = this.player;
-    if (!p) return [];
-    const age = this.age(p);
+    return p ? this.winterRisk(p, strat) : [];
+  }
+
+  /** NPC の冬の過ごし方（気性で決まる） */
+  npcStrategy(ind: Individual): ForageStrategy {
+    return ind.base.boldness > 0.62 ? 'greedy' : ind.base.boldness < 0.38 ? 'cautious' : 'normal';
+  }
+
+  /**
+   * この冬に ind が死ぬ見込み（死因ごと）。forage() と同じ式。
+   * guarded は、あなたが冬に連れていく子（餌場を教わって太りやすく、シャチからも守られる）。
+   */
+  winterRisk(ind: Individual, strat: ForageStrategy = this.npcStrategy(ind), guarded = false): { cause: DeathCause; p: number }[] {
+    const age = this.age(ind);
     const { effort, orcaMul } = FORAGE[strat];
-    const { gain, upkeep } = this.forageBudget(p, this.foodNow(), effort);
-    const after = Math.min(1, Math.max(0, p.condition + gain - upkeep));
+    const { gain, upkeep } = this.forageBudget(ind, this.foodNow(), effort);
+    const after = Math.min(1, Math.max(0, ind.condition + gain - upkeep + (guarded ? GUARD_BONUS : 0)));
     const out: { cause: DeathCause; p: number }[] = [
+      { cause: 'weak', p: age === 0 ? (0.16 + 0.4 * (1 - after)) * (guarded ? GUARD_WEAK : 1) : 0 },
+      { cause: 'sick', p: (age === 0 ? 0 : age <= 2 ? 0.07 : ind.id === this.playerId ? 0 : ind.sex === 'M' ? 0.06 : 0.045) * (guarded ? GUARD_SICK : 1) },
       { cause: 'old', p: age > 11 ? 0.07 * (age - 11) : 0 },
-      { cause: 'orca', p: this.orcaRisk(p, orcaMul, after) },
+      { cause: 'orca', p: this.orcaRisk(ind, orcaMul * (guarded ? 0.5 : 1), after) },
       { cause: 'starve', p: after < 0.08 ? 0.6 : after < 0.16 ? 0.2 : 0 },
-      { cause: 'wound', p: p.injury * p.injury * 0.6 },
-      { cause: 'frail', p: (1 - p.base.vigor) * 0.25 },
+      { cause: 'wound', p: ind.injury * ind.injury * 0.6 },
+      { cause: 'frail', p: (1 - ind.base.vigor) * 0.25 },
     ];
     return out.filter((o) => o.p >= 0.002);
   }
 
-  forage(playerStrategy: ForageStrategy = 'normal'): ForageReport {
+  /** 死ぬ見込みを合わせたもの */
+  static totalRisk(rs: { p: number }[]): number {
+    return 1 - rs.reduce((a, r) => a * (1 - r.p), 1);
+  }
+
+  /** 冬に連れていける、あなたの血を引く幼いオス（4 歳まで。素質の高い順） */
+  youngKin(): Individual[] {
+    return this.living()
+      .filter((i) => i.sex === 'M' && i.dynasty > 0 && i.id !== this.playerId && this.age(i) <= 4)
+      // 素質の高い子、冬を越せない見込みの高い子から
+      .map((i) => ({ i, key: i.base.hoko * (0.6 + World.totalRisk(this.winterRisk(i))) }))
+      .sort((a, b) => b.key - a.key)
+      .map((x) => x.i);
+  }
+
+  forage(playerStrategy: ForageStrategy = 'normal', guardedIds: number[] = []): ForageReport {
+    const guarded = new Set(guardedIds.slice(0, MAX_GUARDED));
     const living = this.living();
     const food = this.foodNow();
     const deaths: ForageReport['deaths'] = [];
@@ -2127,11 +2157,14 @@ export class World {
 
     for (const ind of living) {
       const age = this.age(ind);
-      const strat: ForageStrategy = ind.id === this.playerId ? playerStrategy : ind.base.boldness > 0.62 ? 'greedy' : ind.base.boldness < 0.38 ? 'cautious' : 'normal';
-      const { effort, orcaMul } = FORAGE[strat];
+      const strat: ForageStrategy = ind.id === this.playerId ? playerStrategy : this.npcStrategy(ind);
+      const g = guarded.has(ind.id);
+      const { effort, orcaMul: baseOrca } = FORAGE[strat];
+      // 連れていく子は餌場を教わって太りやすく、シャチからも守られる。連れていく親は、そのぶん自分が食べる暇が減る。
+      const orcaMul = baseOrca * (g ? 0.5 : 1);
       const { gain: meanGain, upkeep } = this.forageBudget(ind, food, effort);
-      const gain = meanGain * this.rng.range(0.85, 1.15);
-      ind.condition = Math.min(1, Math.max(0, ind.condition + gain - upkeep));
+      const gain = meanGain * this.rng.range(0.85, 1.15) * (ind.id === this.playerId ? 1 - GUARD_COST * guarded.size : 1);
+      ind.condition = Math.min(1, Math.max(0, ind.condition + gain - upkeep + (g ? GUARD_BONUS : 0)));
 
       // 死亡
       let pDie = 0;
@@ -2142,10 +2175,11 @@ export class World {
           cause = c;
         }
       };
-      if (age === 0) add(0.16 + 0.4 * (1 - ind.condition), 'weak');
-      else if (age <= 2) add(0.07, 'sick');
+      // 連れていった子は、親がそばで守るので弱りにくく、病気にもなりにくい
+      if (age === 0) add((0.16 + 0.4 * (1 - ind.condition)) * (g ? GUARD_WEAK : 1), 'weak');
+      else if (age <= 2) add(0.07 * (g ? GUARD_SICK : 1), 'sick');
       // あなたのキャラは、前触れのない病気では死なない（老い・シャチ・飢え・傷・体の弱さでは死ぬ）
-      else if (ind.id !== this.playerId) add(ind.sex === 'M' ? 0.06 : 0.045, 'sick');
+      else if (ind.id !== this.playerId) add((ind.sex === 'M' ? 0.06 : 0.045) * (g ? GUARD_SICK : 1), 'sick');
       if (age > 11) add(0.07 * (age - 11), 'old');
       const pOrca = this.orcaRisk(ind, orcaMul);
       if (pDie === 0) add(pOrca, 'orca');
@@ -2392,6 +2426,13 @@ export interface HeadRecord {
   herdMean: number;
   peakHarem: number;
 }
+
+/** 冬に連れていける子の数と、その効き目 */
+export const MAX_GUARDED = 2;
+const GUARD_BONUS = 0.08;
+const GUARD_WEAK = 0.6;
+const GUARD_SICK = 0.5;
+export const GUARD_COST = 0.12;
 
 /** 一族のつぶやきのうち、ログに出す節目のもの */
 const KIN_NOTABLE = new Set<string>([
