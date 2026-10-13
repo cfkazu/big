@@ -104,6 +104,9 @@ export interface LogEntry {
   text: string;
   kind: LogKind;
   indId?: number;
+  /** 同じ文が続いた日数（まとめたとき） */
+  repeat?: number;
+  lastDay?: number;
 }
 
 export interface YearStats {
@@ -161,7 +164,7 @@ export interface FertStats {
 
 /** その年の目標（年の初めに決め、繁殖期の終わりに確かめる） */
 export interface YearGoal {
-  kind: 'mate' | 'holder';
+  kind: 'mate' | 'holder' | 'conceive' | 'fat';
   target: number;
   label: string;
 }
@@ -311,7 +314,8 @@ export class World {
   }
 
   age(ind: Individual): number {
-    return ind.ageAt(this.year);
+    // 死んだ個体の年齢は、死んだ年で止める
+    return ind.ageAt(ind.alive || ind.deathYear === null ? this.year : ind.deathYear);
   }
 
   hoko(ind: Individual): number {
@@ -407,24 +411,36 @@ export class World {
   /** 年の初めに、いまの立場に合った目標を決める */
   makeYearGoal(): YearGoal | null {
     const p = this.player;
-    if (!p) return null;
+    if (!p) return (this.yearGoal = null);
     const age = this.age(p);
-    if (age < 4) return null;
+    if (age < 4) return (this.yearGoal = null);
     const s = this.slotOf(p);
-    if (p.base.tactic !== 'R') return (this.yearGoal = { kind: 'mate', target: 3, label: 'メスと3回つがう' });
-    if (s !== null) {
+    if (p.base.tactic !== 'R') return (this.yearGoal = { kind: 'mate', target: 4, label: 'メスと4回つがう' });
+    if (s !== null && this.slotFemales(s).length > 0) {
+      // 主なら、つがう回数ではなく「あなたの子を宿したメス」の数
       const n = this.slotFemales(s).length;
-      const target = Math.max(5, Math.min(30, Math.round(n * 0.7)));
-      return (this.yearGoal = { kind: 'mate', target, label: `メスと${target}回つがう` });
+      const target = Math.max(2, Math.min(12, Math.round(n * 0.25)));
+      return (this.yearGoal = { kind: 'conceive', target, label: `あなたの子を${target}頭に宿させる` });
     }
-    return (this.yearGoal = { kind: 'holder', target: 1, label: '浜を手に入れ、メスを迎える' });
+    // 勝てそうな浜がなければ、来季に向けて蓄える
+    const reachable = this.challengeTargets().some((t) => t.isHolder && this.challengeVerdict(this.get(t.id)!).pWin >= 0.35);
+    if (s === null && !reachable && age >= 5) return (this.yearGoal = { kind: 'fat', target: 0.95, label: '脂肪を満タン近く（95%以上）にして季節を終える' });
+    return (this.yearGoal = { kind: 'holder', target: 1, label: s !== null ? 'メスを迎える（ハーレムを作る）' : '浜を手に入れ、メスを迎える' });
   }
 
   /** 今年の目標を達成したか（繁殖期の終わりに呼ぶ）。続けて達成した年数も数える。 */
   judgeYearGoal(s: SeasonSummary): boolean | null {
     const g = this.yearGoal;
     if (!g) return null;
-    const ok = g.kind === 'mate' ? s.playerMatings >= g.target : s.playerWasHolder;
+    const p = this.player;
+    const ok =
+      g.kind === 'mate'
+        ? s.playerMatings >= g.target
+        : g.kind === 'conceive'
+          ? s.playerConceptions >= g.target
+          : g.kind === 'fat'
+            ? (p?.condition ?? 0) >= g.target
+            : s.playerWasHolder;
     this.goalStreak = ok ? this.goalStreak + 1 : 0;
     this.yearGoal = null;
     return ok;
@@ -2223,6 +2239,13 @@ export class World {
   }
 
   pushLog(text: string, kind: LogKind, indId?: number): void {
+    // 同じ文が日をまたいで続くときは、1 行にまとめて日数を数える
+    const last = this.log[this.log.length - 1];
+    if (last && last.text === text && last.kind === kind && last.year === this.year && this.day - (last.lastDay ?? last.day) <= 1 && this.day !== (last.lastDay ?? last.day)) {
+      last.repeat = (last.repeat ?? 1) + 1;
+      last.lastDay = this.day;
+      return;
+    }
     this.log.push({ year: this.year, day: this.day, text, kind, indId });
     if (this.log.length > 400) this.log.splice(0, this.log.length - 400);
   }

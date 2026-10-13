@@ -550,7 +550,7 @@ export function renderLog(g: GameView, root: HTMLElement): void {
         'div',
         { class: `entry k-${e.kind}`, onclick: who ? () => g.select(who.id) : undefined },
         h('span', { class: 'when' }, e.day >= BREED_DAYS ? `${w.displayYear(e.year)}年 冬` : e.day < 0 ? `${w.displayYear(e.year)}年 春` : `${w.displayYear(e.year)}年${e.day + 1}日`),
-        h('span', null, e.text),
+        h('span', null, e.text, e.repeat && e.lastDay != null ? h('span', { class: 'sub' }, `（${e.lastDay + 1}日まで${e.repeat}日続いた）`) : null),
       ),
     );
   }

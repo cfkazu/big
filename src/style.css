@@ -799,7 +799,7 @@ h3::before {
 
 .list .item {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -891,6 +891,8 @@ canvas.chart {
   background: var(--slate);
   border: 2px solid var(--ink);
 }
+
+.narrow-only { display: none; }
 
 /* ─── セリフ帳 ─── */
 .lb-win { width: min(760px, 94vw); }
@@ -994,6 +996,7 @@ canvas.chart {
   #timebar .speeds { width: auto; flex: none; }
   #timebar .speeds .sub { display: none; }
   .wide-only { display: none; }
+  .narrow-only { display: inline; }
   #app { padding-bottom: 72px; }
   .stat { grid-template-columns: 72px minmax(0, 1fr) auto; }
   /* 一覧の行は狭い画面では 2 段に：名前の行の下に、見立てと数字を並べる */

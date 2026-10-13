@@ -149,8 +149,10 @@ class Game implements GameView {
     const p = w.player;
     const opp = w.get(pr.opponentId);
     if (!p || !opp) return false;
-    if (pr.kind === 'escalate') return pr.winChance >= 0.75;
-    return pr.perceivedOpp < pr.self * 0.9 || w.fightOdds(p, opp, pr.slotAtStake, false) >= 0.75;
+    if (pr.kind === 'escalate') return pr.winChance >= 0.75 || (!pr.challenger && w.slotOf(p) !== null && pr.winChance >= 0.3);
+    // 浜の主として挑まれたら、引いても浜を失うだけなので、よほど分が悪くない限り受ける
+    if (pr.slotAtStake) return w.fightOdds(p, opp, true, false) >= 0.3;
+    return pr.perceivedOpp < pr.self * 0.9 || w.fightOdds(p, opp, false, false) >= 0.75;
   }
 
   /** 自分に何か起きるまで、日を続けて進める */
@@ -345,10 +347,10 @@ class Game implements GameView {
     this.refresh();
   }
 
-  async openChallenge(): Promise<void> {
+  async openChallenge(): Promise<boolean> {
     const w = this.world;
     const p = w.player;
-    if (!p) return;
+    if (!p) return false;
     const myHoko = hokoDisplay(p, w.year);
     // 見立ては開いた時点で一度だけ計算し、絞り込みや並べ替えで使い回す
     const rows = w.challengeTargets().map((t) => {
@@ -439,6 +441,7 @@ class Game implements GameView {
       w.pushLog(`明日、${w.get(id)!.name}に挑むことにした。`, 'player', p.id);
     }
     this.refresh();
+    return id !== null;
   }
 
   /** 挑む相手のおすすめ：発情の残っている浜の主を、勝てる見込み × 発情の残っているメスの数で並べる */
@@ -446,14 +449,14 @@ class Game implements GameView {
     const w = this.world;
     return w
       .challengeTargets()
-      .filter((t) => t.isHolder && w.slotFemales(t.slot!).length > 0)
+      .filter((t) => t.isHolder && w.slotFemales(t.slot!).length >= 3)
       .map((t) => {
         const m = w.get(t.id)!;
         const v = w.challengeVerdict(m);
         const e = w.slotEstrus(t.slot!);
         return { t, m, v, e, n: w.slotFemales(t.slot!).length, score: v.pWin * (e.now + e.later) };
       })
-      .filter((r) => r.v.pWin >= 0.35 && r.e.now + r.e.later > 0)
+      .filter((r) => r.v.pWin >= 0.35 && r.e.now + r.e.later >= 2)
       .sort((a, b) => b.score - a.score)
       .slice(0, n);
   }
@@ -554,6 +557,8 @@ class Game implements GameView {
     w.abdicate(id);
     this.select(id);
     this.refresh();
+    // 新しい当主で、今年の目標と狙える浜を出し直す
+    await this.showBriefing();
   }
 
   /** ハーレムが空のまま日が過ぎたら、どうするか聞く。勝てそうな浜の主をひとり勧める。 */
@@ -605,8 +610,11 @@ class Game implements GameView {
     if (choice === 'target' && best) {
       w.setPlayerStance({ kind: 'challenge', targetId: best.m.id });
       w.pushLog(`明日、${best.m.name}に挑むことにした。`, 'player', p.id);
-    } else if (choice === 'pick') await this.openChallenge();
-    else if (choice === 'auto') w.setPlayerStance({ kind: 'auto' });
+    } else if (choice === 'pick') {
+      const chose = await this.openChallenge();
+      // やめたら、もとの画面に戻る
+      if (!chose) return this.askEmptyHarem();
+    } else if (choice === 'auto') w.setPlayerStance({ kind: 'auto' });
     this.refresh();
   }
 
@@ -872,7 +880,11 @@ class Game implements GameView {
       'div',
       { class: 'controls' },
       btn(
-        this.judgeMode === 'auto' ? '判断：気質任せ' : this.judgeMode === 'easy' ? '判断：楽な勝負は自動' : '判断：自分で',
+        this.judgeMode === 'auto'
+          ? `判断：気質任せ（${(w.player?.base.aggression ?? 0.5) > 0.62 ? '短気・受けがち' : (w.player?.base.aggression ?? 0.5) < 0.38 ? '温厚・引きがち' : '並の気性'}）`
+          : this.judgeMode === 'easy'
+            ? '判断：楽な勝負は自動'
+            : '判断：自分で',
         () => {
           this.judgeMode = this.judgeMode === 'self' ? 'easy' : this.judgeMode === 'easy' ? 'auto' : 'self';
           this.renderTop();
@@ -898,7 +910,9 @@ class Game implements GameView {
     );
     const next = btn('次の日へ ▸', () => void this.stepDay(), '');
     const skip = btn(
-      this.skipping ? h('span', null, '❚❚', h('span', { class: 'wide-only' }, ' 止める')) : h('span', null, '⏩', h('span', { class: 'wide-only' }, ' 何か起きるまで')),
+      this.skipping
+        ? h('span', null, '❚❚ 止める')
+        : h('span', null, '⏩ ', h('span', { class: 'wide-only' }, '何か起きるまで'), h('span', { class: 'narrow-only' }, '先へ')),
       () => (this.skipping ? (this.skipping = false) : void this.skipToEvent()),
       this.skipping ? 'on' : '',
     );
@@ -1262,9 +1276,14 @@ class Game implements GameView {
           );
         })(),
         // 脂肪が満タンなら、どれを選んでも増えない。違いはシャチに襲われる見込みだけ。
-        p.condition >= 0.99
-          ? h('div', { class: 'note', style: 'margin-bottom:4px' }, '脂肪はもう満タンなので、どれを選んでも増えない。違いはシャチに襲われる見込みだけ。「慎重に」がいちばん安全。')
-          : null,
+        (() => {
+          // どれを選んでも脂肪がほとんど変わらないなら、違いはシャチだけ
+          const ds = (['cautious', 'normal', 'greedy'] as const).map((k) => w.forageOutlook(k).delta);
+          const flat = Math.max(...ds) - Math.min(...ds) < 0.03;
+          return flat
+            ? h('div', { class: 'note', style: 'margin-bottom:4px' }, `脂肪は${p.condition >= 0.99 ? 'もう満タンなので' : 'どれを選んでもほぼ同じで'}、違いはシャチに襲われる見込みだけ。「慎重に」がいちばん安全。`)
+            : null;
+        })(),
         h(
           'div',
           { class: 'choices' },

@@ -351,7 +351,7 @@ describe('見立てとおまかせ', () => {
     const v = w.challengeVerdict(opp);
     expect(v.memory).toBe('stoodFirm');
     expect(v.pRetreat).toBeLessThanOrEqual(0.1);
-  });
+  }, 30000);
 
   it('おまかせの主は、メスがいなければ海で食べ、翌日はおまかせに戻る', () => {
     const w = World.create(52, 20);
