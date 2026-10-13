@@ -353,7 +353,7 @@ describe('見立てとおまかせ', () => {
     expect(v.pRetreat).toBeLessThanOrEqual(0.1);
   }, 30000);
 
-  it('おまかせの主は、メスがいなければ海で食べ、翌日はおまかせに戻る', () => {
+  it('おまかせの主は、メスがいなくて痩せていれば海で食べ、翌日はおまかせに戻る', () => {
     const w = World.create(52, 20);
     w.choosePlayer(w.founderCandidates()[0].id, true);
     w.startBreedingSeason();
@@ -365,12 +365,12 @@ describe('見立てとおまかせ', () => {
     for (const f of w.living()) if (f.slot === 0 && f.sex === 'F') f.slot = null;
     (w as unknown as { invalidateSlots(): void }).invalidateSlots();
     for (const m of w.living()) if (m.sex === 'M' && m.id !== p.id) m.lastLossDay = w.day;
-    p.condition = 0.4;
+    p.condition = 0.25;
     w.setPlayerStance({ kind: 'auto' });
     const g = w.runDay();
     let r = g.next();
     while (!r.done) r = g.next('accept');
-    expect(p.condition).toBeGreaterThan(0.4);
+    expect(p.condition).toBeGreaterThan(0.25);
     expect(w.playerStance.kind).toBe('auto');
   });
 });
@@ -751,5 +751,57 @@ describe('第1弾：当主を譲る・病死・目標・受精の内訳', () => 
     expect(f.won).toBe(s.playerConceptions);
     const ok = w.judgeYearGoal(s);
     expect(typeof ok).toBe('boolean');
+  });
+});
+
+describe('よその浜のメスを誘う', () => {
+  function setup(seed: number) {
+    const w = World.create(seed, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const p = w.player!;
+    const ww = w as unknown as { invalidateSlots(): void; femaleChoose: () => void };
+    for (let i = 0; i < w.slotHolders.length; i++) if (w.slotHolders[i] === p.id) w.slotHolders[i] = null;
+    const old = w.get(w.slotHolders[0]!);
+    if (old) old.slot = null;
+    w.slotHolders[0] = p.id;
+    p.slot = 0;
+    for (const f of w.living()) if (f.sex === 'F' && f.slot === 0) f.slot = 1;
+    ww.invalidateSlots();
+    ww.femaleChoose = () => {};
+    for (const m of w.living()) if (m.sex === 'M' && m.id !== p.id) m.lastLossDay = w.day;
+    return { w, p };
+  }
+
+  it('懐いていないメスほど誘いに乗りやすく、乗れば自分の浜に来る', () => {
+    const { w, p } = setup(31);
+    const t = w.lureTargets(1)[0];
+    expect(t).toBeTruthy();
+    const f = t.f;
+    f.pupId = null;
+    f.loyalty = 0.9;
+    const hi = w.lureChance(f);
+    f.loyalty = 0;
+    const lo = w.lureChance(f);
+    expect(lo).toBeGreaterThan(hi);
+    let came = 0;
+    for (let i = 0; i < 20 && came === 0; i++) {
+      f.loyalty = 0;
+      w.setPlayerStance({ kind: 'lure', femaleId: f.id });
+      const g = w.runDay();
+      let r = g.next();
+      while (!r.done) r = g.next('accept');
+      if (f.slot === w.slotOf(p)) came++;
+    }
+    expect(came).toBe(1);
+  });
+
+  it('メスのいない主は、おまかせでも脈があれば誘いに行く', () => {
+    const { w, p } = setup(32);
+    for (const f of w.living()) if (f.sex === 'F') f.loyalty = 0;
+    w.setPlayerStance({ kind: 'auto' });
+    p.condition = 0.9;
+    const s = (w as unknown as { resolveAutoStance(p: unknown): { kind: string } }).resolveAutoStance(p);
+    expect(s.kind).toBe('lure');
   });
 });

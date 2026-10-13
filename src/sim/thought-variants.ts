@@ -57,6 +57,15 @@ export const VARIANTS: Partial<Record<ThoughtKey, Partial<Record<Tag, string[]>>
     cold: ['せいせいしたわ。', 'どうぞご勝手に。'],
     withPup: ['子がいるから、わたしはここに残るわ。', 'この子を連れて浜を移るのは無理よ。'],
   },
+  fLured: {
+    big: ['あのホコの浜なら、行ってみたい。'],
+    gentleFan: ['優しそうなオスね。ついて行ってみる。'],
+    hokoFan: ['ホコを見せてもらってから決めたの。'],
+  },
+  fLureNo: {
+    small: ['そのホコで、わたしを誘うの？'],
+    withPup: ['子がいるから、動けないの。'],
+  },
   fSplashHoko: {
     huge: ['これだけ大きいと、水をかけるのもひと仕事。', 'バケツが欲しいくらいの大きさね。'],
     big: ['大きいから、まんべんなく濡らすのが大変。'],

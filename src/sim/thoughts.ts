@@ -10,7 +10,7 @@ export type ThoughtKey =
   | 'sneakSuccess' | 'sneakCaught' | 'satelliteSuccess'
   | 'rivalBigger' | 'youngWatch' | 'peripheralIdle' | 'holderIdle' | 'holderEmpty'
   | 'fMoveCrowded' | 'fMoveAttracted' | 'fGroomHoko' | 'fGroomHokoGroup' | 'fGroomWound' | 'fGroomFur'
-  | 'fFollowHolder' | 'fStayBehind' | 'fSplashHoko' | 'fShooCrab' | 'fShooGull' | 'splashedHoko' | 'crabShooed' | 'gullShooed'
+  | 'fFollowHolder' | 'fStayBehind' | 'fLured' | 'fLureNo' | 'lureSuccess' | 'lureFail' | 'fSplashHoko' | 'fShooCrab' | 'fShooGull' | 'splashedHoko' | 'crabShooed' | 'gullShooed'
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
   | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'pupWaitMomFur' | 'pupWaitMate' | 'pupCheer' | 'youngEnvy'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
@@ -196,6 +196,26 @@ const T: Record<ThoughtKey, Entry> = {
   fStayBehind: {
     mood: 'sad',
     any: ['わたしは、この浜で待つわ。', 'この浜が好きなの。ごめんね、{other}。', '{other}、行っちゃった……。', '次の主は、どんなオスかしら。', '追いかけるほどの仲じゃなかったわね。'],
+  },
+  fLured: {
+    mood: 'love',
+    any: ['{other}の浜に移ってみようかしら。', '誘われちゃった。……悪い気はしないわ。', '{other}って、思ったより素敵。', 'ついて行ってみるわ。', 'ここより、{other}のところのほうが落ち着けそう。'],
+  },
+  fLureNo: {
+    mood: 'angry',
+    any: ['わたしには、もうボスがいるの。', 'その手には乗らないわ。', '{other}、しつこい。', 'ボスに見つかったらどうするの！', 'またね。気が向いたら。'],
+  },
+  lureSuccess: {
+    mood: 'happy',
+    brash: ['{I}に口説けないメスはいない。', '{other}、見る目があるな。'],
+    timid: ['ほ、本当に来てくれた……！', '声をかけてみるものだな……。'],
+    any: ['{other}が来てくれた！', '口説き落とした。浜がにぎやかになる。', '{I}の浜へようこそ、{other}。', '誘ってみるものだな。', '一頭いれば、次も来る。'],
+  },
+  lureFail: {
+    mood: 'sad',
+    brash: ['{other}め、見る目がない。'],
+    timid: ['……やっぱり、だめだった。'],
+    any: ['{other}にふられた……。', '口説くのは難しい。', 'あの浜の主の目が怖い。', '次は、もっといい日に。', '……砂でも見ていよう。'],
   },
   fSplashHoko: {
     mood: 'neutral',
@@ -420,6 +440,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   matedMany: sit('たくさんつがったオス', 'オス', null, [...SIZE, ...AGE], MATED_N),
   groomedHoko: sit('ホコをなめてもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   groomedHokoGroup: sit('何頭かにホコをなめてもらったオス', 'オス', 'メスたち', [...SIZE, ...AGE], LICKERS_N),
+  lureSuccess: sit('よその浜のメスを口説き落とした主', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
+  lureFail: sit('よその浜のメスにふられた主', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   splashedHoko: sit('ホコに海水をかけてもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   crabShooed: sit('カニを追い払ってもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   gullShooed: sit('カモメを追い払ってもらったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
@@ -446,6 +468,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   fGroomHokoGroup: sit('ほかのメスと一緒にホコをなめたメス', 'メス', 'ボス', F_ABOUT_M, LICKERS_N),
   fFollowHolder: sit('別の浜へ移る主についていくメス', 'メス', 'ボス', F_ABOUT_M),
   fStayBehind: sit('別の浜へ移る主を見送るメス', 'メス', 'ボス', F_ABOUT_M),
+  fLured: sit('よその主に誘われて、ついてきたメス', 'メス', 'オス', F_ABOUT_M),
+  fLureNo: sit('よその主の誘いを断ったメス', 'メス', 'オス', F_ABOUT_M),
   fSplashHoko: sit('ホコに海水をかけてあげたメス', 'メス', 'ボス', F_ABOUT_M),
   fShooCrab: sit('ホコを狙うカニを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),
   fShooGull: sit('ホコを狙うカモメを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),

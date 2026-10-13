@@ -524,6 +524,55 @@ class Game implements GameView {
     this.refresh();
   }
 
+  /** よその浜のメスを誘いに行く（主のとき、今日限り） */
+  async openLure(): Promise<boolean> {
+    const w = this.world;
+    const p = w.player;
+    if (!p || w.slotOf(p) === null) return false;
+    const targets = w.lureTargets(12);
+    const id = await ask<number | null>((done) => {
+      const list = h('div', { class: 'list' });
+      for (const { f, chance, holder } of targets) {
+        const pup = f.pupId != null && w.get(f.pupId)?.alive;
+        const hn = holder ? w.slotFemales(f.slot!).length : 0;
+        const why = [
+          holder ? (f.loyalty < 0.2 ? `${holder.name}に不満そう` : f.loyalty > 0.55 ? `${holder.name}に懐いている` : `${holder.name}の浜`) : '主がいない',
+          holder && hn > w.guardCap(holder) ? '浜が混み合っている' : '',
+          pup ? '子連れ' : '',
+          f.base.pref > 0.62 ? 'ホコ好き' : f.base.pref < 0.38 ? '穏やか好き' : '',
+        ].filter(Boolean);
+        list.append(
+          h(
+            'button',
+            { class: 'btn item', onclick: () => done(f.id) },
+            h('span', null, f.name, h('span', { class: 'sub' }, ` ${w.age(f)}歳・${why.join('・')}`)),
+            h('span', { class: chance >= 0.4 ? 'up' : 'sub' }, `見込み約${Math.round(chance * 10)}割`),
+            h('span', null, '誘う'),
+          ),
+        );
+      }
+      if (targets.length === 0) list.append(h('div', { class: 'sub' }, '誘えそうなメスがいない。'));
+      return h(
+        'div',
+        null,
+        h('h2', null, 'よその浜のメスを誘う'),
+        h(
+          'div',
+          { class: 'sub' },
+          'いまの主に懐いていないメス、あなたに惹かれるメス（ホコ好きなら大きなホコ、穏やか好きなら穏やかなオス）、混み合った浜のメスほど誘いに乗りやすい。子連れのメスは動きにくい。誘いに行く日は自分の浜の見張りが手薄になり、しくじるとあちらの主に追い払われることもある。',
+        ),
+        list,
+        h('div', { class: 'row' }, btn('やめる', () => done(null))),
+      );
+    });
+    if (id !== null) {
+      w.setPlayerStance({ kind: 'lure', femaleId: id });
+      w.pushLog(`明日、${w.get(id)!.name}を誘いに行くことにした。`, 'player', p.id);
+    }
+    this.refresh();
+    return id !== null;
+  }
+
   /** 当主を、血を引く一族のオスに譲る（繁殖期の初日だけ、年に一度） */
   async openAbdicate(): Promise<void> {
     const w = this.world;
@@ -590,7 +639,8 @@ class Game implements GameView {
       : remaining > 0
         ? h('div', { class: 'note', style: 'margin:6px 0' }, 'いま勝てそうな浜の主は見当たらない（引かせる見込みと組んで勝つ見込みを合わせて3割半ばに届かない）。海で蓄えて、痩せてきた主を待つのも手。')
         : null;
-    const choice = await ask<'target' | 'pick' | 'auto' | 'keep'>((done) =>
+    const lureBest = w.lureTargets(1)[0];
+    const choice = await ask<'target' | 'pick' | 'auto' | 'keep' | 'lure'>((done) =>
       h(
         'div',
         null,
@@ -601,8 +651,9 @@ class Game implements GameView {
           'div',
           { class: 'row' },
           btn(h('span', null, 'このまま', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, 'いまの予定を続ける')), () => done('keep'), 'small'),
-          btn(h('span', null, 'おまかせで待つ', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, 'メスが来るまで海で食べる')), () => done('auto'), remaining === 0 ? 'primary' : ''),
+          btn(h('span', null, 'おまかせで待つ', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, '脈のあるメスを誘うか、海で食べる')), () => done('auto'), remaining === 0 ? 'primary' : ''),
           remaining > 0 ? btn('相手を選んで挑む…', () => done('pick')) : null,
+          remaining > 0 && lureBest ? btn(`メスを誘う…（いちばん脈あり約${Math.round(lureBest.chance * 10)}割）`, () => done('lure')) : null,
           best ? btn(`${best.m.name}に挑む`, () => done('target'), 'primary') : null,
         ),
       ),
@@ -613,6 +664,9 @@ class Game implements GameView {
     } else if (choice === 'pick') {
       const chose = await this.openChallenge();
       // やめたら、もとの画面に戻る
+      if (!chose) return this.askEmptyHarem();
+    } else if (choice === 'lure') {
+      const chose = await this.openLure();
       if (!chose) return this.askEmptyHarem();
     } else if (choice === 'auto') w.setPlayerStance({ kind: 'auto' });
     this.refresh();
@@ -1098,13 +1152,14 @@ class Game implements GameView {
         ),
         ...sec(
           '毎日の方針（右の欄）',
-          '選んだ方針は「今日の予定」に出て、日を進めたときに実行される。「守る」「おまかせ」「うろつく」「海で食べる」は変えるまで毎日続く。「挑む」と「メスに構う」はその日限りで、翌日は元の方針に戻る。',
+          '選んだ方針は「今日の予定」に出て、日を進めたときに実行される。「守る」「おまかせ」「うろつく」「海で食べる」は変えるまで毎日続く。「挑む」「メスに構う」「メスを誘う」はその日限りで、翌日は元の方針に戻る。',
           '挑む…：ほかのオスに勝負を挑む（5歳から）。浜の主に勝てば、その浜とハーレムを奪える。',
           'うろつく：見張りの外にいるメスをうかがう。主でなくても交尾の機会がある。',
           '海で食べる：浜を離れて食べ、脂肪を取り戻す。主がこれを選ぶと、その日はほとんど見張れない。',
           '守る（主のみ）：見張れるメスが1.3倍に増え、取っ組み合いでも粘る。',
           'おまかせ（主のみ）：毎朝ハーレムの様子を見て、守る・なだめる・機嫌の悪いメスに構う・見張りの外の発情メスに寄り添う、を自動で選ぶ。',
           'メスに構う…（主のみ）：ハーレム全体をなだめる、一頭とつがう・毛づくろいしてあげる・寄り添って守る・世話（ホコをなめて綺麗にする／傷の手当て／毛づくろい）をさせる。',
+          'メスを誘う…（主のみ）：よその浜のメスを口説いて、自分の浜に連れてくる。いまの主に懐いていない・あなたに惹かれる・混み合った浜のメスほど乗りやすい。しくじると、あちらの主に追い払われることも。メスのいない浜の主は、おまかせでも脈があれば誘いに行く。',
         ),
         ...sec(
           '序列と勝負',

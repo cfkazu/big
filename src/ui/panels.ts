@@ -37,6 +37,7 @@ export interface GameView {
   openAttend(femaleId?: number): void;
   fastForward(): void;
   openAbdicate(): void;
+  openLure(): void;
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -159,7 +160,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
     const harem = holder ? w.slotFemales(w.slotOf(p)!).length : 0;
     const hintText = holder
       ? harem === 0
-        ? `まだメスがいない。メスは浜を見て回り、魅力のある主のもとへ自然に集まってくる。浜を騒がしくしないで待とう。${st === 'guard' ? '「守る」のままだと待つあいだ痩せていく。「おまかせ」なら海で食べて蓄える。' : ''}`
+        ? `まだメスがいない。待てば、魅力のある主のもとへメスは集まってくる。待ちきれなければ「メスを誘う…」で、よその浜の不満そうなメスを口説いて連れてこよう。${st === 'guard' ? '「守る」のままだと待つあいだ痩せていく。' : ''}`
         : '主として浜を守っている。挑戦者を退け、メスを見張れ。「おまかせ」なら様子を見てメスに構ってくれる。'
       : age < 5
         ? 'まだ挑むには若い。うろついて、隙をうかがおう。'
@@ -170,6 +171,7 @@ function actions(g: GameView, p: Individual): HTMLElement {
         btn('守る', () => g.stanceGuard(), on('guard')),
         btn('おまかせ', () => g.stanceAuto(), on('auto')),
         btn('メスに構う…', () => g.openAttend(), ['court', 'groom', 'tend', 'escort', 'soothe'].includes(st) ? 'on' : ''),
+        btn('メスを誘う…', () => g.openLure(), on('lure')),
       );
     }
     if (age >= 5) box.append(btn('挑む…', () => g.openChallenge(), on('challenge')));
@@ -230,6 +232,10 @@ function planText(w: World): string {
     }
     case 'soothe':
       return '低い声で鳴いて、ハーレム全体をなだめる。今日限り';
+    case 'lure': {
+      const f = w.get(s.femaleId);
+      return f ? `よその浜の${f.name}を誘いに行く（見込み約${Math.round(w.lureChance(f) * 10)}割。しくじると、あちらの主に追い払われることも）。今日限り` : '誘う相手がいない';
+    }
   }
 }
 

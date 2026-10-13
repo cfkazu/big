@@ -37,11 +37,13 @@ export type Stance =
   | { kind: 'tend'; femaleId: number }
   | { kind: 'escort'; femaleId: number }
   | { kind: 'soothe' }
+  // 主がよその浜のメスを口説いて、自分の浜へ誘う
+  | { kind: 'lure'; femaleId: number }
   // 主のおまかせ：毎朝ハーレムの様子を見て、上のどれかを自動で選ぶ
   | { kind: 'auto' };
 
 /** 主が一頭のメスにかかりきりになる方針（その日限り） */
-const ONE_DAY_HOLDER_STANCES = new Set(['court', 'groom', 'tend', 'escort', 'soothe']);
+const ONE_DAY_HOLDER_STANCES = new Set(['court', 'groom', 'tend', 'escort', 'soothe', 'lure']);
 
 export type GroomType = 'hoko' | 'wound' | 'fur';
 
@@ -240,6 +242,8 @@ export class World {
   /** 今年の目標と、続けて達成した年数 */
   yearGoal: YearGoal | null = null;
   goalStreak = 0;
+  /** この繁殖期に口説き落としたメスの数（多いほど次は難しい） */
+  luredThisSeason = 0;
   /** 当主を譲った年（年に一度まで） */
   abdicatedYear = -1;
   /** プレイヤーの浜にメスがいない日が何日続いているか */
@@ -677,8 +681,11 @@ export class World {
     const s = this.slotOf(p);
     if (s === null) return { kind: 'roam' };
     const fs = this.slotFemales(s);
-    // メスのいない浜は守っても仕方がない。海で食べて蓄える。
-    if (fs.length === 0) return { kind: 'rest' };
+    // メスのいない浜は守っても仕方がない。脈のあるメスがいれば誘いに行き、いなければ海で食べて蓄える。
+    if (fs.length === 0) {
+      const t = p.condition >= 0.3 ? this.lureTargets(1)[0] : undefined;
+      return t && t.chance >= 0.3 ? { kind: 'lure', femaleId: t.f.id } : { kind: 'rest' };
+    }
     // 痩せてきたら、発情の近いメスがいない日に海で食べる
     const soonEstrus = fs.some((f) => f.estrusStart >= 0 && f.estrusStart + 3 > this.day && f.estrusStart <= this.day + 2);
     if (p.condition < 0.25 && !soonEstrus) return { kind: 'rest' };
@@ -879,6 +886,7 @@ export class World {
     this.paternity = { R: 0, S: 0, F: 0 };
     this.conceptionsThisYear = 0;
     this.playerConceptions = 0;
+    this.luredThisSeason = 0;
     this.playerFert = { females: 0, won: 0, lost: 0, none: 0, miscarried: 0 };
     const living = this.living();
     const adultF = living.filter((i) => isAdultFemale(i, this.year)).length;
@@ -1532,6 +1540,73 @@ export class World {
     this.think(p, 'tendDone', { about: f }, 0.6);
   }
 
+  /**
+   * よその浜のメスを誘える見込み。いまの主への懐きが薄いほど、あなたに惹かれるほど、
+   * いまの浜が混み合っているほど高い。子連れのメスは動きにくい。
+   */
+  lureChance(f: Individual): number {
+    const p = this.player;
+    if (!p) return 0;
+    const holder = f.slot !== null ? this.get(this.slotHolders[f.slot]) : undefined;
+    const tie = holder ? f.loyalty : 0;
+    const diff = this.attraction(f, p) - (holder ? this.attraction(f, holder) : -1);
+    const crowded = holder && f.slot !== null && this.slotFemales(f.slot).length > this.guardCap(holder) ? 0.12 : 0;
+    let c = 0.05 + 0.3 * (1 - tie) + 0.12 * Math.max(-1, Math.min(1, diff)) + crowded;
+    if (f.pupId != null && this.get(f.pupId)?.alive) c *= 0.5;
+    // 口説くたびに噂が立ち、メスたちは用心する。自分のハーレムが大きいほど、よそのメスは寄りつきにくい。
+    c *= Math.pow(0.8, this.luredThisSeason);
+    const s = this.slotOf(p);
+    if (s !== null) c *= Math.max(0.3, 1 - this.slotFemales(s).length / Math.max(1, this.guardCap(p)));
+    return Math.max(0.02, Math.min(0.6, c));
+  }
+
+  /** 誘えそうなよその浜のメス（見込みの高い順） */
+  lureTargets(n = 12): { f: Individual; chance: number; holder: Individual | undefined }[] {
+    const p = this.player;
+    const s = p ? this.slotOf(p) : null;
+    if (!p || s === null) return [];
+    return this.living()
+      .filter((f) => f.sex === 'F' && f.onBeach && isAdultFemale(f, this.year) && f.slot !== s)
+      .map((f) => ({ f, chance: this.lureChance(f), holder: f.slot !== null ? this.get(this.slotHolders[f.slot]) : undefined }))
+      .sort((a, b) => b.chance - a.chance)
+      .slice(0, n);
+  }
+
+  /** よその浜のメスを口説きに行く。うまくいけば自分の浜へ。しくじると、相手の主に追い払われることも。 */
+  private playerLure(): void {
+    const p = this.player;
+    const st = this.playerStance;
+    if (!p || st.kind !== 'lure') return;
+    const s = this.slotOf(p);
+    const f = this.get(st.femaleId);
+    if (s === null || !f || !f.alive || !f.onBeach || f.slot === s) {
+      this.pushLog(`${f?.name ?? 'そのメス'}はもう誘えない。`, 'player', p.id);
+      return;
+    }
+    p.condition = Math.max(0, p.condition - 0.004);
+    const holder = f.slot !== null ? this.get(this.slotHolders[f.slot]) : undefined;
+    if (this.rng.chance(this.lureChance(f))) {
+      const from = f.slot;
+      f.slot = s;
+      f.loyalty = Math.min(0.8, this.arrivalLoyalty(f, p, false) + 0.1);
+      this.invalidateSlots();
+      this.dayEvents.push({ kind: 'move', femaleId: f.id, from, to: s });
+      this.luredThisSeason++;
+      this.pushLog(`${f.name}を口説いて、浜に連れてきた！`, 'player', f.id);
+      this.think(f, 'fLured', { about: p });
+      this.think(p, 'lureSuccess', { about: f }, 0.8);
+      return;
+    }
+    // しくじると、相手の主に見つかって追い払われることがある
+    if (holder && holder.onBeach && this.rng.chance(0.35)) {
+      this.chase(holder, p, f.slot);
+    } else {
+      this.pushLog(`${f.name}を誘ったが、つれなかった。`, 'player', f.id);
+    }
+    this.think(f, 'fLureNo', { about: p }, 0.7);
+    this.think(p, 'lureFail', { about: f }, 0.6);
+  }
+
   /** 主が低い声で鳴いて、ハーレム全体を落ち着かせる */
   private playerSoothe(): void {
     const p = this.player;
@@ -1592,6 +1667,7 @@ export class World {
   private groomingPhase(): void {
     this.playerOrderedGrooming();
     this.playerTend();
+    this.playerLure();
     const esc = this.get(this.escortedId());
     if (esc && this.player) {
       esc.loyalty = Math.min(1, esc.loyalty + 0.06);
@@ -1682,7 +1758,7 @@ export class World {
     const sneakersBySlot = this.tacticBySlot('F');
     const courted = this.playerCourt();
     // プレイヤーが一頭にかまけている日は、ほかのメスに手が回りにくい
-    const busyCourting = this.playerStance.kind === 'court';
+    const busyCourting = this.playerStance.kind === 'court' || this.playerStance.kind === 'lure';
     const escorted = this.escortedId();
     for (const f of estrous) {
       if (this.day === f.estrusStart) this.think(f, 'fEstrus', {}, 0.25);
@@ -2348,6 +2424,7 @@ function autoLabel(w: World, s: Stance): string {
     case 'soothe': return '浜が騒がしいので、ハーレムをなだめる';
     case 'escort': return `見張りの外にいる発情中の${name(s.femaleId)}に寄り添う`;
     case 'tend': return `機嫌の悪い${name(s.femaleId)}を毛づくろいしてやる`;
+    case 'lure': return `よその浜の${name(s.femaleId)}を誘いに行く`;
     case 'groom': return `${name(s.femaleId)}に${GROOM_ACT[s.type]}させる`;
     case 'rest': {
       // 理由で文言を分ける（メスが何頭もいるのに「いない」と読めないように）
