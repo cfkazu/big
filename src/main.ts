@@ -155,13 +155,17 @@ class Game implements GameView {
 
   /** 自分に何か起きるまで、日を続けて進める */
   private async skipToEvent(): Promise<void> {
+    const w = this.world;
     if (this.mode !== 'season' || this.skipping) return;
     this.playing = false;
     this.skipping = true;
     this.renderTop();
     try {
+      const year = w.year;
       for (let i = 0; i < BREED_DAYS && this.skipping && this.mode === 'season'; i++) {
         await this.stepDay();
+        // 季節が変わったら（年の初めの画面が出る）そこで止める
+        if (w.year !== year || w.phase !== 'breeding' || w.day === 0 || isModalOpen()) break;
         if (this.somethingHappened()) break;
         await new Promise((r) => setTimeout(r, 60));
       }
@@ -1245,7 +1249,7 @@ class Game implements GameView {
         h('h3', null, '採餌期の過ごし方'),
         (() => {
           // この冬に死ぬ見込み（ふつうに過ごした場合）。あなたは前触れのない病気では死なない。
-          const label: Partial<Record<string, string>> = { old: '老い', orca: 'シャチ', starve: '飢え', wound: '傷の悪化', sick: '体の弱さ' };
+          const label: Partial<Record<string, string>> = { old: '老い', orca: 'シャチ', starve: '飢え', wound: '傷の悪化', frail: '体の弱さ' };
           const risks = w.deathOutlook('normal');
           const total = 1 - risks.reduce((a, r) => a * (1 - r.p), 1);
           const text = risks.length

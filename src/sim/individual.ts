@@ -37,7 +37,7 @@ export interface Thought {
   raw?: string;
 }
 
-export type DeathCause = 'old' | 'orca' | 'starve' | 'wound' | 'sick' | 'crushed' | 'orphan' | 'weak';
+export type DeathCause = 'old' | 'orca' | 'starve' | 'wound' | 'sick' | 'frail' | 'crushed' | 'orphan' | 'weak';
 
 /** 遺伝子型と発生ノイズで決まり、一生変わらない基礎値 */
 export interface BasePhenotype {

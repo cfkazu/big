@@ -2021,7 +2021,7 @@ export class World {
       { cause: 'orca', p: this.orcaRisk(p, orcaMul, after) },
       { cause: 'starve', p: after < 0.08 ? 0.6 : after < 0.16 ? 0.2 : 0 },
       { cause: 'wound', p: p.injury * p.injury * 0.6 },
-      { cause: 'sick', p: (1 - p.base.vigor) * 0.25 },
+      { cause: 'frail', p: (1 - p.base.vigor) * 0.25 },
     ];
     return out.filter((o) => o.p >= 0.002);
   }
@@ -2060,7 +2060,7 @@ export class World {
       if (pDie === 0 && ind.condition < 0.08) add(0.6, 'starve');
       else if (pDie === 0 && ind.condition < 0.16) add(0.2, 'starve');
       if (pDie === 0) add(ind.injury * ind.injury * 0.6, 'wound');
-      if (pDie === 0) add((1 - ind.base.vigor) * 0.25, 'sick');
+      if (pDie === 0) add((1 - ind.base.vigor) * 0.25, 'frail');
       if (pDie > 0) {
         this.kill(ind, cause);
         deaths.push({ id: ind.id, name: ind.name, cause, dynasty: ind.dynasty, age });
@@ -2344,6 +2344,7 @@ export function causeLabel(c: DeathCause): string {
     case 'starve': return '飢え';
     case 'wound': return '傷の悪化';
     case 'sick': return '病気';
+    case 'frail': return '体の弱さ';
     case 'crushed': return '圧死';
     case 'orphan': return '母の死';
     case 'weak': return '衰弱';

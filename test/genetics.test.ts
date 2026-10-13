@@ -715,7 +715,7 @@ describe('第1弾：当主を譲る・病死・目標・受精の内訳', () => 
     w.choosePlayer(w.founderCandidates()[0].id, true);
     w.player!.base.vigor = 0.6;
     const o = w.deathOutlook('normal');
-    expect(o.find((r) => r.cause === 'sick')!.p).toBeCloseTo(0.1, 5);
+    expect(o.find((r) => r.cause === 'frail')!.p).toBeCloseTo(0.1, 5);
   });
 
   it('繁殖期の初日に、血を引くオスへ当主を譲れる（年に一度）', () => {
