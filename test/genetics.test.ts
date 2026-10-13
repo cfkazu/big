@@ -340,6 +340,15 @@ describe('見立てとおまかせ', () => {
     if (tally.displayWin) expect(tally.displayWin.retreat / tally.displayWin.n).toBeGreaterThan(0.75);
     for (const k of ['fight', 'displayLose']) if (tally[k]) expect(tally[k].retreat / tally[k].n).toBeLessThan(0.25);
     expect(tally.fight?.n ?? 0).toBeGreaterThan(0);
+    // 今年引かなかった相手は「前は引かなかった」と出て、引く見込みは低くなる
+    const w = World.create(51, 30);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    const opp = w.get(w.challengeTargets()[0].id)!;
+    w.stoodFirm.set(opp.id, w.year);
+    const v = w.challengeVerdict(opp);
+    expect(v.memory).toBe('stoodFirm');
+    expect(v.pRetreat).toBeLessThanOrEqual(0.1);
   });
 
   it('おまかせの主は、メスがいなければ海で食べ、翌日はおまかせに戻る', () => {
@@ -549,6 +558,38 @@ describe('浜の奪い合い', () => {
     expect(w.slotHolders.filter((id) => id === p.id)).toHaveLength(1);
     expect(w.slotOf(p)).toBe(1);
     expect(w.slotHolders[0]).toBeNull();
+  });
+
+  it('別の浜へ移ると、懐いているメスはついてきて、懐いていないメスは残る', () => {
+    let came = 0;
+    let stayed = 0;
+    for (const seed of [81, 82, 83, 84, 85]) {
+      const w = World.create(seed, 20);
+      w.choosePlayer(w.founderCandidates()[0].id, true);
+      w.startBreedingSeason();
+      const p = w.player!;
+      for (let i = 0; i < w.slotHolders.length; i++) if (w.slotHolders[i] === p.id) w.slotHolders[i] = null;
+      const old0 = w.get(w.slotHolders[0]!);
+      if (old0) old0.slot = null;
+      w.slotHolders[0] = p.id;
+      p.slot = 0;
+      const ww = w as unknown as { invalidateSlots(): void; resolveWin(a: unknown, b: unknown, k: string, s: number): void };
+      ww.invalidateSlots();
+      const fs = w.slotFemales(0);
+      const fond = fs.filter((_, i) => i % 2 === 0);
+      const cold = fs.filter((_, i) => i % 2 === 1);
+      for (const f of fond) { f.loyalty = 1; f.pupId = null; }
+      for (const f of cold) f.loyalty = 0;
+      ww.invalidateSlots();
+      expect(w.followOutlook()!.expected).toBeCloseTo(fond.length * 0.9, 5);
+      ww.resolveWin(p, w.get(w.slotHolders[1]!)!, 'display', 1);
+      came += fond.filter((f) => f.slot === 1).length;
+      stayed += fond.filter((f) => f.slot === 0).length;
+      expect(cold.every((f) => f.slot === 0)).toBe(true);
+      // ついてきたメスは懐いたまま
+      expect(fond.filter((f) => f.slot === 1).every((f) => f.loyalty > 0.9)).toBe(true);
+    }
+    expect(came).toBeGreaterThan(stayed * 3);
   });
 
   it('何年回しても、ひとりの主が二つの浜に入らない', () => {

@@ -214,12 +214,23 @@ export function openLineBook(): Promise<void> {
           if (gone.length > 0) {
             groups.set(
               HIDDEN_LABEL,
-              gone.map((g) => h('li', { class: 'gone' }, ...lineNodes(g.text, sit), confirmBtn('戻す', '本当に戻す', () => removeLine(g.id)))),
+              gone.map((g) => {
+              const back = btn('戻す', () => {
+                back.disabled = true;
+                removeLine(g.id).catch(() => {
+                  back.disabled = false;
+                  back.textContent = 'できなかった';
+                });
+              }, 'small lb-del');
+              back.disabled = storeMode() === 'pending';
+              return h('li', { class: 'gone' }, ...lineNodes(g.text, sit), back);
+            }),
             );
           }
           // どんなとき → 強気 → 弱気 → 条件の順
           const order = [KIND_LABEL.any, KIND_LABEL.brash, KIND_LABEL.timid, ...sit.tags.map((t) => TAG_LABEL[t]), HIDDEN_LABEL];
           const labels = [...groups.keys()].sort((a, b) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99);
+          if (last) list.append(h('div', { class: 'sub lb-note' }, 'この場面のセリフは残り1つなので消せない（喋ることがなくなるため）。先にセリフを足すと消せるようになる。'));
           for (const label of labels) list.append(h('h3', null, label), h('ul', null, ...groups.get(label)!));
           update();
         };

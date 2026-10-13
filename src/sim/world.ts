@@ -204,6 +204,9 @@ export class World {
   /** 主のとき、おまかせを選んでいるか */
   holderAuto = true;
   /** プレイヤーが主なのに、メスが一頭もいない日が続いた日数 */
+  /** あなたが挑んだとき、見せ合いで引いた／引かなかった相手（その年のうち。値は年） */
+  backedDownTo = new Map<number, number>();
+  stoodFirm = new Map<number, number>();
   /** 群れの誰かがその文を最後に言った日（year*100+day） */
   private saidRecently = new Map<string, number>();
   /** プレイヤーの浜にメスがいない日が何日続いているか */
@@ -692,6 +695,50 @@ export class World {
     }
   }
 
+  /** 主が別の浜へ移るとき、メスがついてくる見込み。懐いているほど高く、子育て中は低い。 */
+  followChance(f: Individual): number {
+    const pup = f.pupId != null && this.get(f.pupId)?.alive;
+    return Math.min(0.9, f.loyalty * (pup ? 0.4 : 1));
+  }
+
+  /** プレイヤーが別の浜を奪ったら、いまのハーレムから何頭ついてきそうか */
+  followOutlook(): { harem: number; expected: number } | null {
+    const p = this.player;
+    const s = p ? this.slotOf(p) : null;
+    if (s === null) return null;
+    const fs = this.slotFemales(s);
+    return { harem: fs.length, expected: fs.reduce((a, f) => a + this.followChance(f), 0) };
+  }
+
+  private followHolder(h: Individual, oldHarem: Individual[], from: number, to: number): void {
+    const came: string[] = [];
+    let stayed = 0;
+    for (const f of oldHarem) {
+      if (!f.alive || f.slot !== from) continue;
+      if (this.rng.chance(this.followChance(f))) {
+        f.slot = to;
+        f.loyalty = Math.max(0, f.loyalty - 0.05);
+        this.dayEvents.push({ kind: 'move', femaleId: f.id, from, to });
+        this.think(f, 'fFollowHolder', { about: h }, 0.5);
+        came.push(f.name);
+      } else {
+        stayed++;
+        this.think(f, 'fStayBehind', { about: h }, 0.3);
+      }
+    }
+    this.invalidateSlots();
+    if (h.id === this.playerId) {
+      const names = came.length > 3 ? `${came.slice(0, 3).join('・')}ほか${came.length - 3}頭` : came.join('・');
+      this.pushLog(
+        came.length > 0
+          ? `もとの浜から${names}がついてきた。${stayed > 0 ? `${stayed}頭はもとの浜に残った。` : ''}`
+          : `もとの浜のメスは、誰もついてこなかった。`,
+        'player',
+        h.id,
+      );
+    }
+  }
+
   private vacateSlot(m: Individual): void {
     const s = this.slotOf(m);
     if (s === null) return;
@@ -939,12 +986,20 @@ export class World {
    *  displayWin：相手はまず引く（8 割以上）／maybe：引くかは五分／fight：見せ合いでは決まらない／displayLose：相手のほうが大きい
    * pWin は、見せ合いで引かせる見込みと、引かなければ組んで勝つ見込みを合わせたもの。
    */
-  challengeVerdict(opp: Individual): { kind: 'displayWin' | 'maybe' | 'displayLose' | 'fight'; odds: number; pRetreat: number; pWin: number } {
+  challengeVerdict(opp: Individual): {
+    kind: 'displayWin' | 'maybe' | 'displayLose' | 'fight';
+    odds: number;
+    pRetreat: number;
+    pWin: number;
+    temper: 'hot' | 'calm' | 'unknown';
+    memory: 'backedDown' | 'stoodFirm' | null;
+  } {
     const me = this.player!;
     const resident = this.slotOf(opp) !== null;
     const mine = this.hoko(me);
     const theirs = this.perceivedHoko(me, opp);
     const odds = this.fightOdds(me, opp, false, resident);
+    const temper = opp.base.aggression > 0.62 ? 'hot' : opp.base.aggression < 0.38 ? 'calm' : 'unknown';
     // 決まった種で毎回同じ見積もりにする（一覧を開き直しても変わらない）
     let seed = (me.id * 73856093) ^ (opp.id * 19349663) ^ (this.year * 83492791);
     const rand = () => {
@@ -960,13 +1015,18 @@ export class World {
       const trueTheirs = theirs / (1 + 0.06 * gauss());
       const seen = mine * (1 + 0.06 * gauss());
       const hubris = Math.min(0.3, Math.max(-0.2, 0.05 * gauss()));
-      const aggr = Math.min(1, Math.max(0, 0.5 + 0.15 * gauss()));
+      // 気性は見た目でおおよそわかる（目が血走っている／落ち着いている）
+      const aggr = temper === 'hot' ? 0.62 + 0.38 * rand() : temper === 'calm' ? 0.38 * rand() : 0.38 + 0.24 * rand();
       if (seen / (trueTheirs * (1 + hubris)) > 1.05 + 0.12 * aggr + (resident ? 0.08 : 0)) retreats++;
     }
-    const pRetreat = retreats / N;
+    let pRetreat = retreats / N;
+    // 今年すでに挑んだ相手は、そのときの出方がまず繰り返される（見え方も気性も一年は変わらない）
+    const memory = this.backedDownTo.get(opp.id) === this.year ? 'backedDown' : this.stoodFirm.get(opp.id) === this.year ? 'stoodFirm' : null;
+    if (memory === 'backedDown') pRetreat = Math.max(pRetreat, 0.9);
+    if (memory === 'stoodFirm') pRetreat = Math.min(pRetreat, 0.1);
     const pWin = pRetreat + (1 - pRetreat) * odds;
     const kind = pRetreat >= 0.8 ? 'displayWin' : pRetreat >= 0.2 ? 'maybe' : theirs / mine > 1.05 ? 'displayLose' : 'fight';
-    return { kind, odds, pRetreat, pWin };
+    return { kind, odds, pRetreat, pWin, temper, memory };
   }
 
   /** 取っ組み合いで me が勝つ確率。浜の主として受ける側には先住効果が付く。 */
@@ -1015,6 +1075,16 @@ export class World {
     const thrB = 1.05 + 0.12 * b.base.aggression + (resident ? 0.08 : 0);
     const aRetreats = a.id !== pid && percAofB / selfA > thrA;
     const bRetreats = b.id !== pid && percBofA / selfB > thrB;
+    // あなたが挑んだ相手が引いたかどうかを覚えておく（挑戦一覧の見立てに使う）
+    if (a.id === pid && !aRetreats) {
+      if (bRetreats) {
+        this.backedDownTo.set(b.id, this.year);
+        this.stoodFirm.delete(b.id);
+      } else {
+        this.stoodFirm.set(b.id, this.year);
+        this.backedDownTo.delete(b.id);
+      }
+    }
     if (aRetreats || bRetreats) {
       if (aRetreats) this.resolveWin(b, a, 'display', slot);
       else this.resolveWin(a, b, 'display', slot);
@@ -1119,6 +1189,7 @@ export class World {
     if (slot !== null && this.slotHolders[slot] === l.id) {
       // 別の浜の主が奪ったときは、もとの浜を空ける（主が持てる浜はひとつ）
       const prevSlot = this.slotOf(w);
+      const oldHarem = prevSlot !== null && prevSlot !== slot ? this.slotFemales(prevSlot) : [];
       if (prevSlot !== null && prevSlot !== slot) this.slotHolders[prevSlot] = null;
       this.slotHolders[slot] = w.id;
       w.slot = slot;
@@ -1131,6 +1202,8 @@ export class World {
         f.loyalty = f.loyalty * 0.25 + 0.2 * f.warmth;
         if (this.rng.chance(0.25)) this.think(f, 'newHolderFemale', { about: w });
       }
+      // もとの浜のメスのうち、懐いているものはついてくる
+      if (oldHarem.length > 0) this.followHolder(w, oldHarem, prevSlot!, slot);
       if (w.id === pid) {
         this.pushLog(`${l.name}から浜を奪った！ ハーレムの主になった。`, 'player', w.id);
         this.playerStance = this.defaultStance(this.player!);
@@ -1579,13 +1652,14 @@ export class World {
     m.lifetime.matings++;
     this.dayEvents.push({ kind: 'mate', maleId: m.id, femaleId: f.id, how });
     const n = m.season.matings;
+    // できごとを先にログへ。つぶやきはそのあと
+    if (m.id === this.playerId) this.pushLog(`${f.name}とつがった。（今季${n}回目・射精${amount.toFixed(0)}億）`, 'player', m.id);
     if (how === 'sneaker') this.think(m, 'sneakSuccess', {}, 0.6);
     else if (how === 'satellite') this.think(m, 'satelliteSuccess', {}, 0.6);
     else if (n >= 3 && n % 2 === 1) this.think(m, 'matedMany', { n }, 0.6);
     else this.think(m, 'mated', { about: f }, 0.5);
     // プレイヤーとつがったメスは、たいてい何かひと言いう
     this.think(f, 'fMated', { about: m }, m.id === this.playerId ? 0.7 : 0.1);
-    if (m.id === this.playerId) this.pushLog(`${f.name}とつがった。（今季${n}回目・射精${amount.toFixed(0)}億）`, 'player', m.id);
   }
 
   /** 発情の終わりに受精を判定する。精子の「くじ引き」：生き残った精子の数に比例して父が決まる。 */
@@ -1728,7 +1802,7 @@ export class World {
       else if (ind.sex === 'M' && age < 5) key = 'youngWatch';
       else if (ind.sex === 'M') {
         const s = this.slotOf(ind);
-        if (s !== null) key = ind.condition < 0.3 ? 'holderFasting' : 'holderIdle';
+        if (s !== null) key = ind.condition < 0.3 ? 'holderFasting' : this.slotFemales(s).length === 0 ? 'holderEmpty' : 'holderIdle';
         else key = 'peripheralIdle';
       } else key = 'fIdle';
       // メスは自分のいる浜の主を思い浮かべる

@@ -8,9 +8,9 @@ export type ThoughtKey =
   | 'groomedHoko' | 'groomedHokoGroup' | 'groomedWound' | 'groomedFur'
   | 'hungry' | 'abandon' | 'seasonHappy' | 'seasonZero' | 'seasonSome'
   | 'sneakSuccess' | 'sneakCaught' | 'satelliteSuccess'
-  | 'rivalBigger' | 'youngWatch' | 'peripheralIdle' | 'holderIdle'
+  | 'rivalBigger' | 'youngWatch' | 'peripheralIdle' | 'holderIdle' | 'holderEmpty'
   | 'fMoveCrowded' | 'fMoveAttracted' | 'fGroomHoko' | 'fGroomHokoGroup' | 'fGroomWound' | 'fGroomFur'
-  | 'fSplashHoko' | 'fShooCrab' | 'fShooGull' | 'splashedHoko' | 'crabShooed' | 'gullShooed'
+  | 'fFollowHolder' | 'fStayBehind' | 'fSplashHoko' | 'fShooCrab' | 'fShooGull' | 'splashedHoko' | 'crabShooed' | 'gullShooed'
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
   | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'pupWaitMomFur' | 'pupWaitMate' | 'pupCheer' | 'youngEnvy'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
@@ -100,6 +100,10 @@ const T: Record<ThoughtKey, Entry> = {
     mood: 'happy',
     any: ['ゴシゴシ……ああ、そこそこ。', '首の後ろまで届く。器用なものだ。', 'うとうと……はっ、寝てた。', '{other}の毛づくろいは、ていねいだ。', '{other}に毛づくろいしてもらった。極楽だ。', '背中がかゆいところに届く。いい子だ。', '{other}の毛づくろいで、眠くなってきた。', '砂まみれだった背中がすっきりした。', '主でよかったと思う瞬間だ。'],
   },
+  holderEmpty: {
+    mood: 'sad',
+    any: ['メスのいない浜は、広すぎる。', '誰か来ないかな……。', '浜はあるのに、ハーレムがない。', 'ここで待っていれば、きっと。', '見張る相手もいない。', 'ホコを磨いて待つしかない。'],
+  },
   hungry: {
     mood: 'sad',
     any: ['ぐぅぅ〜……。', '腹が減った。でも浜を離れたら終わりだ。', '何日食べていないだろう。', '腹の虫がうるさい。', 'メスたちは食べに行けていいな。', '海の魚の夢を見た。'],
@@ -180,6 +184,14 @@ const T: Record<ThoughtKey, Entry> = {
   fGroomHokoGroup: {
     mood: 'happy',
     any: ['みんなでボスのホコをなめた。ちょっとしたお祭りね。', 'ぺろぺろ、ぺろぺろ……{n}頭がかりよ。', 'ほかの子と頭がぶつかっちゃった。', '手分けしたら、あっという間にピカピカ。', '先っぽはわたしの担当。ゆずらないわよ。', 'ボス、うっとりしてたわね。'],
+  },
+  fFollowHolder: {
+    mood: 'love',
+    any: ['{other}が行くなら、わたしも。', '新しい浜でも、{other}のそばにいるわ。', '置いていかないでよ、{other}。', '引っ越しね。……まあ、悪くないわ。', '{other}についていくって、決めてたの。'],
+  },
+  fStayBehind: {
+    mood: 'sad',
+    any: ['子がいるから、わたしはここに残るわ。', 'この浜が好きなの。ごめんね、{other}。', '{other}、行っちゃった……。', '次の主は、どんなオスかしら。', '追いかけるほどの仲じゃなかったわね。'],
   },
   fSplashHoko: {
     mood: 'neutral',
@@ -409,6 +421,7 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   tendDone: sit('メスを毛づくろいしてやった主', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   sootheDone: sit('ハーレムをなだめた主', 'オス', null, [...SIZE, ...AGE]),
   holderIdle: sit('浜を守る主のひとりごと', 'オス', null, [...SIZE, ...AGE]),
+  holderEmpty: sit('メスのいない浜で待つ主', 'オス', null, [...SIZE, ...AGE]),
   hungry: sit('腹ぺこの主', 'オス', null, [...SIZE, ...AGE]),
   holderFasting: sit('絶食で痩せてきた主', 'オス', null, [...SIZE, ...AGE]),
   abandon: sit('力尽きて浜を去るオス', 'オス', null, [...SIZE, ...AGE]),
@@ -422,6 +435,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   seasonZero: sit('繁殖期の終わり（つがえなかった）', 'オス', null, [...SIZE, ...AGE]),
   fGroomHoko: sit('ホコをなめて綺麗にしたメス', 'メス', 'ボス', F_ABOUT_M),
   fGroomHokoGroup: sit('ほかのメスと一緒にホコをなめたメス', 'メス', 'ボス', F_ABOUT_M, LICKERS_N),
+  fFollowHolder: sit('別の浜へ移る主についていくメス', 'メス', 'ボス', F_ABOUT_M),
+  fStayBehind: sit('別の浜へ移る主を見送るメス', 'メス', 'ボス', F_ABOUT_M),
   fSplashHoko: sit('ホコに海水をかけてあげたメス', 'メス', 'ボス', F_ABOUT_M),
   fShooCrab: sit('ホコを狙うカニを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),
   fShooGull: sit('ホコを狙うカモメを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),

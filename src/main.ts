@@ -276,6 +276,7 @@ class Game implements GameView {
     });
     const remaining = w.estrusRemaining();
     const late = w.day >= 28 || remaining <= 2;
+    const follow = w.followOutlook();
     const id = await ask<number | null>((done) => {
       let holdersOnly = false;
       let byOdds = false;
@@ -290,13 +291,14 @@ class Game implements GameView {
           const odds = oddsWord(v.odds);
           // プレイヤーは見せ合いで自分からは引かないので、相手が引かなければ取っ組み合うかどうかの判断になる
           const verdict =
-            v.kind === 'displayWin'
+            (v.memory === 'backedDown' ? '前は引いた・' : v.memory === 'stoodFirm' ? '前は引かなかった・' : '') +
+            (v.kind === 'displayWin'
               ? '見せ合いで勝てそう（相手はまず引く）'
               : v.kind === 'maybe'
-                ? `見せ合いで引くかは五分・組めば${odds}`
+                ? `見せ合いで引くかは五分・組めば${odds}（合わせて${oddsWord(v.pWin).replace('勝ち目', '約')}）`
                 : v.kind === 'displayLose'
                   ? `相手のほうが大きい・組めば${odds}`
-                  : `見せ合いでは決まらない・組めば${odds}`;
+                  : `見せ合いでは決まらない・組めば${odds}`);
           list.append(
             h(
               'button',
@@ -307,6 +309,8 @@ class Game implements GameView {
                 t.isHolder ? '♛ ' : '',
                 m.name,
                 h('span', { class: 'sub' }, ` ${w.age(m)}歳・${Math.round(bodyMass(m, w.year))}kg${t.isHolder ? `・ハーレム${w.slotFemales(t.slot!).length}頭` : ''}`),
+                // 気性の見た目（気の荒い相手は見せ合いで引きにくい）
+                v.temper !== 'unknown' ? h('span', { class: v.temper === 'hot' ? 'down' : 'sub' }, v.temper === 'hot' ? '・気が荒そう' : '・落ち着いている') : null,
                 // 奪ったときの見返り：いま発情しているメスと、これから発情するメス
                 estrus ? h('span', { class: estrus.now + estrus.later > 0 ? 'up' : 'sub' }, `・発情中${estrus.now}・これから${estrus.later}`) : null,
                 // 主は繁殖期の後半ほど痩せて弱る
@@ -338,8 +342,11 @@ class Game implements GameView {
         'div',
         null,
         h('h2', null, '誰に挑む？'),
+        follow && follow.harem > 0
+          ? h('div', { class: 'note', style: 'margin-bottom:4px' }, `ほかの浜を奪うと、いまの浜（${follow.harem}頭）は手放す。懐いているメスはついてくる（いまなら${Math.round(follow.expected)}頭ほど）。子育て中のメスは残りやすい。`)
+          : null,
         late ? h('div', { class: 'note', style: 'margin-bottom:4px' }, remaining > 0 ? `この浜で発情を残しているメスは、あと${remaining}頭ほど。いま浜を奪っても、今季はつがえないかもしれない。` : 'この浜で発情を残しているメスは、もうほとんどいない。いま浜を奪っても、今季はつがえないだろう。') : null,
-        h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm・体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。相手の大きさは見た目の推定で、多少の見誤りがある。`),
+        h('div', { class: 'sub' }, `あなたのホコ：${myHoko.toFixed(1)}cm・体重 ${Math.round(bodyMass(p, w.year))}kg・脂肪 ${Math.round(p.condition * 100)}%。相手の大きさは見た目の推定で、1割ほど見誤ることがある。気の荒い相手は見せ合いで引きにくい。`),
         h('div', { class: 'sub' }, '浜の主は簡単には引かないので、見せ合いで勝つには 2 割ほど大きいホコが要る。それ以外は取っ組み合うかどうかの判断になり、体重と脂肪がものを言う。主に勝てば、その浜とハーレムを奪える。挑めるのは 1 日 1 回で、次に日を進めたときに勝負になる。'),
         h('div', { class: 'tabs', style: 'margin:6px 0' }, filterBtn, sortBtn),
         list,
@@ -358,39 +365,56 @@ class Game implements GameView {
     const w = this.world;
     const p = w.player;
     if (!p || w.slotOf(p) === null) return;
-    const best = w
-      .challengeTargets()
-      .filter((t) => t.isHolder && w.slotFemales(t.slot!).length > 0)
-      .map((t) => {
-        const m = w.get(t.id)!;
-        const v = w.challengeVerdict(m);
-        const e = w.slotEstrus(t.slot!);
-        return { t, m, v, e, n: w.slotFemales(t.slot!).length, score: v.pWin * (e.now + e.later + 0.3 * w.slotFemales(t.slot!).length) };
-      })
-      .filter((r) => r.v.pWin >= 0.35)
-      .sort((a, b) => b.score - a.score)[0];
     const remaining = w.estrusRemaining();
+    // 発情の残っている浜の主だけを勧める
+    const best =
+      remaining === 0
+        ? undefined
+        : w
+            .challengeTargets()
+            .filter((t) => t.isHolder && w.slotFemales(t.slot!).length > 0)
+            .map((t) => {
+              const m = w.get(t.id)!;
+              const v = w.challengeVerdict(m);
+              const e = w.slotEstrus(t.slot!);
+              return { t, m, v, e, n: w.slotFemales(t.slot!).length, score: v.pWin * (e.now + e.later) };
+            })
+            .filter((r) => r.v.pWin >= 0.35 && r.e.now + r.e.later > 0)
+            .sort((a, b) => b.score - a.score)[0];
+    const days = w.emptyHaremDays;
+    const situation =
+      remaining === 0
+        ? '今季、発情を残しているメスはもういない。浜を奪っても、もうつがえない。来季に向けて海で食べて蓄えよう。'
+        : w.day < 12
+          ? `メスたちはまだ浜を選んでいる。浜全体で発情を残しているメスは、あと${remaining}頭ほど。待てば来るかもしれないが、強い主のもとへ集まりやすい。`
+          : w.day < 28
+            ? `繁殖期も半ば。浜全体で発情を残しているメスは、あと${remaining}頭ほど。待つより、奪いにいくほうが早いかもしれない。`
+            : `繁殖期も終わりが近い。発情を残しているメスは、あと${remaining}頭ほど。挑むなら、痩せてきた主を狙いたい。`;
+    const advice = best
+      ? h(
+          'div',
+          { class: 'note', style: 'margin:6px 0' },
+          `おすすめ：♛${best.m.name}（ハーレム${best.n}頭・発情中${best.e.now}・これから${best.e.later}${best.m.condition < 0.4 ? '・痩せてきた' : ''}）。`,
+          best.v.kind === 'displayWin'
+            ? '見せ合いで勝てそう。'
+            : `${best.v.kind === 'maybe' ? '見せ合いで引くかは五分、' : '見せ合いでは決まらず、'}組めば${oddsWord(best.v.odds)}。`,
+        )
+      : remaining > 0
+        ? h('div', { class: 'note', style: 'margin:6px 0' }, 'いま勝てそうな浜の主は見当たらない（引かせる見込みと組んで勝つ見込みを合わせて3割半ばに届かない）。海で蓄えて、痩せてきた主を待つのも手。')
+        : null;
     const choice = await ask<'target' | 'pick' | 'auto' | 'keep'>((done) =>
       h(
         'div',
         null,
         h('h2', null, 'ハーレムにメスがいない'),
-        h('div', null, `もう${w.emptyHaremDays}日、あなたの浜にメスがいない。浜全体で発情を残しているメスは、あと${remaining}頭ほど。`),
-        best
-          ? h(
-              'div',
-              { class: 'note', style: 'margin:6px 0' },
-              `おすすめ：♛${best.m.name}（ハーレム${best.n}頭・発情中${best.e.now}・これから${best.e.later}）。`,
-              best.v.kind === 'displayWin' ? '見せ合いで勝てそう。' : `${best.v.kind === 'maybe' ? '見せ合いで引くかは五分、' : '見せ合いでは決まらず、'}組めば${oddsWord(best.v.odds)}。`,
-            )
-          : h('div', { class: 'note', style: 'margin:6px 0' }, 'いま勝てそうな浜の主は見当たらない。おまかせで海で食べて蓄え、終盤に痩せてきた主を狙うのも手。'),
-        h('div', { class: 'sub' }, 'おまかせ：メスが来るまでは海で食べて脂肪を蓄え、メスが来たら世話をする。'),
+        h('div', null, `もう${days}日、あなたの浜にメスがいない。${situation}`),
+        advice,
         h(
           'div',
           { class: 'row' },
-          btn('このまま', () => done('keep'), 'small'),
-          btn('おまかせで待つ', () => done('auto')),
-          btn('相手を選んで挑む…', () => done('pick')),
+          btn(h('span', null, 'このまま', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, 'いまの予定を続ける')), () => done('keep'), 'small'),
+          btn(h('span', null, 'おまかせで待つ', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, 'メスが来るまで海で食べる')), () => done('auto'), remaining === 0 ? 'primary' : ''),
+          remaining > 0 ? btn('相手を選んで挑む…', () => done('pick')) : null,
           best ? btn(`${best.m.name}に挑む`, () => done('target'), 'primary') : null,
         ),
       ),
@@ -920,16 +944,18 @@ class Game implements GameView {
           ? `${opp.name}が見せ合いを挑んできた！`
           : gap > 1.15
             ? `${opp.name}のホコは明らかに大きい`
-            : gap < 0.87
-              ? `${opp.name}はホコで劣るのに引かない`
-              : `${opp.name}とホコは互角のにらみ合い`;
+            : gap > 1.05
+              ? `${opp.name}のホコのほうが少し大きい`
+              : gap < 0.95
+                ? `${opp.name}はホコで劣るのに引かない`
+                : `${opp.name}とホコは互角のにらみ合い`;
       const lose = pr.kind === 'challenged' ? pr.slotAtStake : w.player && w.slotOf(w.player) !== null;
       const desc =
         pr.kind === 'challenged'
           ? `受けて立つ：ホコを見せ合う。差がはっきりすれば小さい方が引き、僅差ならもう一度、取っ組み合うかを選べる。引く：戦わずに負け${lose ? '、浜とハーレムを明け渡す' : '。ケガはしない'}。`
           : pr.challenger
-            ? `${gap > 1.15 ? '見せ合いでは分が悪い。' : gap < 0.87 ? '相手は大きさの差を認めず、引こうとしない。' : '見せ合いでは決着がつかない。'}取っ組み合う：体格と脂肪がものを言い、負ければケガを負う。引く：自分から挑んだ勝負なので、ここで身を引いても序列の下がり方は半分で済む。`
-            : `見せ合いでは決着がつかない。取っ組み合う：体格と脂肪がものを言い、負ければケガを負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
+            ? `${gap > 1.05 ? '見せ合いでは分が悪いが、あなたは引かなかった。' : gap < 0.95 ? '相手は大きさの差を認めず、引こうとしない。' : 'ホコの差がほとんどなく、見せ合いでは決着がつかない。'}取っ組み合う：体格と脂肪がものを言い、負ければケガを負う。引く：自分から挑んだ勝負なので、ここで身を引いても序列の下がり方は半分で済む。`
+            : `見せ合いでは、どちらも引かなかった。取っ組み合う：体格と脂肪がものを言い、負ければケガを負う${lose ? 'うえ浜を失う' : ''}。引く：ケガはしないが負け${lose ? '、浜を明け渡す' : ''}。`;
       return h(
         'div',
         null,
@@ -986,6 +1012,10 @@ class Game implements GameView {
           line('脂肪', `${Math.round(p.condition * 100)}%`),
         ),
         h('h3', null, '採餌期の過ごし方'),
+        // 脂肪が満タンなら、どれを選んでも増えない。違いはシャチに襲われる見込みだけ。
+        p.condition >= 0.99
+          ? h('div', { class: 'note', style: 'margin-bottom:4px' }, '脂肪はもう満タンなので、どれを選んでも増えない。違いはシャチに襲われる見込みだけ。「慎重に」がいちばん安全。')
+          : null,
         h(
           'div',
           { class: 'choices' },
