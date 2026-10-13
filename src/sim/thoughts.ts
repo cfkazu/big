@@ -4,7 +4,7 @@ import { VARIANTS, type Tag } from './thought-variants';
 
 export type ThoughtKey =
   | 'winDisplay' | 'loseDisplay' | 'winFight' | 'loseFight'
-  | 'takeHarem' | 'loseHarem' | 'mated' | 'matedMany'
+  | 'takeHarem' | 'takeEmptyBeach' | 'loseHarem' | 'mated' | 'matedMany'
   | 'groomedHoko' | 'groomedHokoGroup' | 'groomedWound' | 'groomedFur'
   | 'hungry' | 'abandon' | 'seasonHappy' | 'seasonZero' | 'seasonSome'
   | 'sneakSuccess' | 'sneakCaught' | 'satelliteSuccess'
@@ -14,7 +14,7 @@ export type ThoughtKey =
   | 'fGaveBirth' | 'fPupLost' | 'fMated' | 'fEstrus' | 'fProtest' | 'fIdle' | 'fAdmire'
   | 'pupIdle' | 'pupMilk' | 'pupHelpGroom' | 'pupWaitMom' | 'pupWaitMomFur' | 'pupWaitMate' | 'pupCheer' | 'youngEnvy'
   | 'orcaEscape' | 'fat' | 'thin' | 'holderFasting' | 'newHolderFemale'
-  | 'fOrderedOk' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
+  | 'fOrderedOk' | 'fOrderedOkHoko' | 'fOrderedNo' | 'fCourtNotYet' | 'fCourtAccept' | 'orderRefused' | 'courtRefused'
   | 'fTended' | 'fEscorted' | 'fSoothed' | 'tendDone' | 'sootheDone' | 'fBigPup' | 'withdrew';
 
 type Mood = Thought['mood'];
@@ -39,8 +39,8 @@ const T: Record<ThoughtKey, Entry> = {
   loseDisplay: {
     mood: 'sad',
     brash: ['……今日は調子が悪かっただけだ。', '{other}め、覚えてろ。'],
-    timid: ['{other}のは大きすぎる。無理です。', 'ひと目で分かった。負けだ。'],
-    any: ['しおしお……。', 'ぐぬぬ……{other}のホコ、でかかった。', '{other}のホコ、あれは反則だろう。', '見せ合いで負けた。比べるんじゃなかった。'],
+    timid: ['……目が合っただけで、だめだった。', 'もう比べたくない。'],
+    any: ['しおしお……。', '目をそらした{I}の負けだ。', '見せ合いで負けた。比べるんじゃなかった。'],
   },
   winFight: {
     mood: 'happy',
@@ -65,6 +65,10 @@ const T: Record<ThoughtKey, Entry> = {
     timid: ['えっ、{I}が主に？ 大丈夫かな……'],
     any: ['ブォオオオ！　今日からここは{I}の浜だ！', '{other}から浜を奪った。', 'ハーレムの主になった。胸が熱い。'],
   },
+  takeEmptyBeach: {
+    mood: 'happy',
+    any: ['空いた浜に入った。今日から{I}が主だ。', '主のいない浜、いただいた。', '誰もいないなら、{I}がもらう。', '浜を手に入れた。あとはメスが来てくれれば。', '戦わずに主か。運がいい。'],
+  },
   loseHarem: {
     mood: 'sad',
     any: ['トボトボ……。', '{other}に浜を奪われた……', 'みんな、すまない。', '主の座から転げ落ちた。', '浜も、メスたちも、もう{I}のものじゃない。', 'あの子たちの顔が見られない。'],
@@ -78,7 +82,7 @@ const T: Record<ThoughtKey, Entry> = {
   matedMany: {
     mood: 'love',
     brash: ['これで{n}回目。{I}は浜の王だ。'],
-    any: ['ヘトヘトだ……でも、まだいける。', '今年はもう{n}回つがえた。幸せだ。', '{n}回……さすがに精が尽きてきた。', '休む暇もない。', 'ハーレムの主はつらいよ。'],
+    any: ['ヘトヘトだ……でも、まだいける。', '今年はもう{n}回つがえた。幸せだ。', '{n}回……さすがに精が尽きてきた。', '休む暇もない。', 'モテるのもつらいよ。'],
   },
   groomedHoko: {
     mood: 'happy',
@@ -114,7 +118,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   abandon: {
     mood: 'sad',
-    any: ['もう限界だ。海へ帰る。', '体がもたない。浜は誰かにくれてやる。', 'みんな、すまない。来年また来る。', '腹が減って、もうホコどころじゃない。', '浜を見張る力が残っていない。'],
+    any: ['もう限界だ。海へ帰る。', '体がもたない。今季はここまでだ。', 'みんな、すまない。来年また来る。', '腹が減って、もうホコどころじゃない。', 'もう浜にいる力が残っていない。'],
   },
   seasonHappy: {
     mood: 'happy',
@@ -140,7 +144,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   sneakCaught: {
     mood: 'sad',
-    any: ['ヒィッ！　見つかった！', 'ばれた！ 尻を噛まれた。', '{other}に見破られた。逃げろ！', '逃げ足だけは自信がある。', 'ほかの浜に紛れ直そう。', '危うく噛み殺されるところだった。'],
+    any: ['ヒィッ！　見つかった！', 'ばれた！ 尻を噛まれた。', '{other}に見破られた。逃げろ！', '逃げ足だけは自信がある。', 'ほかの浜を当たろう。', '危うく噛み殺されるところだった。'],
   },
   rivalBigger: {
     mood: 'angry',
@@ -166,16 +170,16 @@ const T: Record<ThoughtKey, Entry> = {
   },
   holderIdle: {
     mood: 'neutral',
-    brash: ['この浜に{I}より立派なホコはない。', '挑みたいやつはいつでも来い。'],
+    brash: ['{I}の浜に手を出すな。', '挑みたいやつはいつでも来い。'],
     any: ['ブォオオ！（とりあえず吠えておく）', 'ゴロン。……見張りは目でする。', 'みんな元気そうだ。', '見張りは疲れる。', 'あの若いの、さっきからこっちを見ている。', '目を離すとすぐに誰か寄ってくる。'],
   },
   fMoveCrowded: {
     mood: 'sad',
-    any: ['ここは騒がしすぎる。子が踏まれる前に移ろう。', '押し合いへし合い、もううんざり。', 'ここじゃ、ゆっくり子育てもできない。', 'もっと静かな浜があるはず。', 'ボス、見張りが手一杯みたい。'],
+    any: ['ここは落ち着かない。', '押し合いへし合い、もううんざり。', 'もう少し静かな所で休みたい。', 'もっと静かな浜があるはず。', 'ボス、見張りが手一杯みたい。'],
   },
   fMoveAttracted: {
     mood: 'love',
-    any: ['{other}のところ、居心地が良さそう。', '{other}……悪くないわね。', '{other}の浜、空いてるみたい。', '前のボスより、{other}のほうが頼りになりそう。', '{other}って、なかなかの体つき。'],
+    any: ['{other}のところ、居心地が良さそう。', '{other}……悪くないわね。', '{other}の浜なら、ゆったりできそう。', '{other}のほうが頼りになりそう。', '{other}って、なかなかの体つき。'],
   },
   fGroomHoko: {
     mood: 'neutral',
@@ -191,7 +195,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   fStayBehind: {
     mood: 'sad',
-    any: ['子がいるから、わたしはここに残るわ。', 'この浜が好きなの。ごめんね、{other}。', '{other}、行っちゃった……。', '次の主は、どんなオスかしら。', '追いかけるほどの仲じゃなかったわね。'],
+    any: ['わたしは、この浜で待つわ。', 'この浜が好きなの。ごめんね、{other}。', '{other}、行っちゃった……。', '次の主は、どんなオスかしら。', '追いかけるほどの仲じゃなかったわね。'],
   },
   fSplashHoko: {
     mood: 'neutral',
@@ -239,7 +243,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   fEstrus: {
     mood: 'love',
-    any: ['ソワソワ……。', 'なんだか落ち着かない。', '今年は誰の子を産もうかしら。', 'ボスのことが気になって仕方ない。', '体が熱い。', 'そろそろかしら。'],
+    any: ['ソワソワ……。', 'なんだか落ち着かない。', '今年は誰の子を産もうかしら。', 'オスたちのことが気になって仕方ない。', '体が熱い。', 'そろそろかしら。'],
   },
   fProtest: {
     mood: 'angry',
@@ -249,7 +253,7 @@ const T: Record<ThoughtKey, Entry> = {
     mood: 'neutral',
     any: ['ふわぁ……（あくび）', 'ゴロゴロ……。', 
       'お日さまが気持ちいい。',
-      'ボスは強いけど、あの若いのも悪くない。',
+      '強いオスもいいけど、あの若いのも悪くない。',
       '早く海に戻りたい。',
       'となりの子、寝相が悪い。',
       'オスってどうしてああなのかしら。',
@@ -258,7 +262,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   fAdmire: {
     mood: 'love',
-    any: ['キャー、ボス！', 'うちのボス、今日のホコは立派だったわ。', '{other}が勝った。さすがね。', 'うちのボスに勝てるオスなんていないわ。', '{other}がいれば、この浜は安心ね。', 'あの挑戦者、尻尾を巻いて逃げたわ。'],
+    any: ['キャー、ボス！', '{other}、今日も浜を守りきったわ。', '{other}が勝った。さすがね。', 'うちのボスに勝てるオスなんていないわ。', '{other}がいれば、この浜は安心ね。', '挑戦者、すごすご帰っていったわ。'],
   },
   newHolderFemale: {
     mood: 'neutral',
@@ -267,7 +271,11 @@ const T: Record<ThoughtKey, Entry> = {
   fOrderedOk: {
     mood: 'neutral',
     brash: ['はいはい、ボス。ご命令とあらば。', 'しょうがないわね、今日だけよ。'],
-    any: ['ボスに呼ばれた。はいはい、ホコね。', 'ボスったら甘えん坊なんだから。', '{other}の世話も楽じゃないわ。'],
+    any: ['ボスに呼ばれた。はいはい、お世話ね。', 'ボスったら甘えん坊なんだから。', '{other}の世話も楽じゃないわ。'],
+  },
+  fOrderedOkHoko: {
+    mood: 'neutral',
+    any: ['ボスに呼ばれた。はいはい、ホコね。', 'ホコの手入れ、頼まれちゃった。', 'ボスったら、ホコのことになると甘えん坊なんだから。', '{other}のホコ、今日もピカピカにしてあげる。', 'はいはい、なめればいいんでしょ……って、言ってみただけ。'],
   },
   fOrderedNo: {
     mood: 'angry',
@@ -275,7 +283,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   fCourtNotYet: {
     mood: 'angry',
-    any: ['ちょっと、まだその時期じゃないでしょ！', '{other}、気が早すぎ。', '子育て中なの。あっち行って。', 'もう少し待ってくれる？', 'そういう気分じゃないの。'],
+    any: ['ちょっと、まだその時期じゃないでしょ！', '{other}、気が早すぎ。', 'まだよ。気が早いんだから。', 'もう少し待ってくれる？', 'そういう気分じゃないの。'],
   },
   fCourtAccept: {
     mood: 'love',
@@ -299,7 +307,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   fEscorted: {
     mood: 'love',
-    any: ['{other}がずっとそばにいてくれる。安心。', '今日は誰も寄ってこない。', 'この子も、{other}がいれば大丈夫。', 'ボスに守られてるって、いいわね。', '{other}、ほかの子は見なくていいの？'],
+    any: ['{other}がずっとそばにいてくれる。安心。', '今日は誰も寄ってこない。', '{other}が見張ってくれてる。ゆっくりできる。', 'ボスに守られてるって、いいわね。', '{other}、ほかの子は見なくていいの？'],
   },
   fSoothed: {
     mood: 'happy',
@@ -357,7 +365,7 @@ const T: Record<ThoughtKey, Entry> = {
   },
   orcaEscape: {
     mood: 'sad',
-    any: ['ザバァッ！　……あ、危なかった。', 'シャチに追われた。生きた心地がしない。', 'ホコが重くて泳ぎにくい……', '黒い背びれが見えた。必死で逃げた。', '仲間がひとり、帰ってこなかった。', '海は豊かだけど、怖い。'],
+    any: ['ザバァッ！　……あ、危なかった。', 'シャチに追われた。生きた心地がしない。', '黒い背びれが見えた。必死で逃げた。', '仲間は無事だろうか。', '海は豊かだけど、怖い。'],
   },
   fat: {
     mood: 'happy',
@@ -386,9 +394,9 @@ export interface Situation {
   tags: Tag[];
 }
 
-const SIZE: Tag[] = ['huge', 'big', 'small'];
+const SIZE: Tag[] = ['top', 'huge', 'big', 'small'];
 const AGE: Tag[] = ['old', 'young'];
-const HER: Tag[] = ['fond', 'cold', 'hokoFan', 'gentleFan'];
+const HER: Tag[] = ['fond', 'cold', 'hokoFan', 'gentleFan', 'withPup'];
 const SEX: Tag[] = ['boy', 'girl'];
 const RIVAL: Tag[] = ['rivalBig', 'rivalEven', 'rivalSmall'];
 /** オスについて話すメス */
@@ -406,6 +414,7 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   withdrew: sit('にらみ合いから身を引いたオス', 'オス', '相手', [...SIZE, ...AGE, ...RIVAL]),
   rivalBigger: sit('自分より大きいホコを見たオス', 'オス', '相手', [...SIZE, ...AGE]),
   takeHarem: sit('浜を奪って主になったオス', 'オス', '前の主', [...SIZE, ...AGE]),
+  takeEmptyBeach: sit('空いた浜に入って主になったオス', 'オス', null, [...SIZE, ...AGE]),
   loseHarem: sit('浜を奪われたオス', 'オス', '奪った相手', [...SIZE, ...AGE]),
   mated: sit('つがったオス', 'オス', 'メス', [...SIZE, ...AGE, ...HER]),
   matedMany: sit('たくさんつがったオス', 'オス', null, [...SIZE, ...AGE], MATED_N),
@@ -442,7 +451,8 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
   fShooGull: sit('ホコを狙うカモメを追い払ったメス', 'メス', 'ボス', F_ABOUT_M),
   fGroomWound: sit('傷の手当てをしたメス', 'メス', 'ボス', F_ABOUT_M),
   fGroomFur: sit('毛づくろいをしたメス', 'メス', 'ボス', F_ABOUT_M),
-  fOrderedOk: sit('頼まれた世話を引き受けたメス', 'メス', 'ボス', F_ABOUT_M),
+  fOrderedOk: sit('頼まれた毛づくろい・手当てを引き受けたメス', 'メス', 'ボス', F_ABOUT_M),
+  fOrderedOkHoko: sit('頼まれたホコの手入れを引き受けたメス', 'メス', 'ボス', F_ABOUT_M),
   fOrderedNo: sit('頼まれた世話を断ったメス', 'メス', 'ボス', F_ABOUT_M),
   fCourtAccept: sit('迫られて受け入れたメス', 'メス', 'ボス', F_ABOUT_M),
   fCourtNotYet: sit('発情前に迫られたメス', 'メス', 'ボス', F_ABOUT_M),
@@ -474,6 +484,7 @@ export const SITUATIONS: Record<ThoughtKey, Situation> = {
 };
 
 export const TAG_LABEL: Record<Tag, string> = {
+  top: '浜でいちばん大きいホコ',
   huge: '並外れて大きいホコ',
   big: '大きいホコ',
   small: '小さいホコ',
@@ -481,6 +492,7 @@ export const TAG_LABEL: Record<Tag, string> = {
   cold: '機嫌が悪い',
   hokoFan: 'ホコ好きのメス',
   gentleFan: '穏やか好きのメス',
+  withPup: '子育て中のメス',
   old: '年寄り',
   young: '若い',
   rivalBig: '相手のほうが大きい',

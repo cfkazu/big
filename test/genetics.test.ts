@@ -154,6 +154,8 @@ describe('主としての行動', () => {
     (w as unknown as { invalidateSlots(): void }).invalidateSlots();
     // ほかのオスは負けた直後ということにして、今日は挑んでこないようにする
     for (const m of w.living()) if (m.sex === 'M' && m.id !== p.id) m.lastLossDay = w.day;
+    // メスが気まぐれに浜を移ると、主の行動の効き目を確かめられないので止めておく
+    (w as unknown as { femaleChoose: () => void }).femaleChoose = () => {};
     return { w, p, f };
   }
 
@@ -652,5 +654,40 @@ describe('ホコを気づかうメス', () => {
     const p = w.player!;
     w.dayEvents = [{ kind: 'hokoCare', maleId: p.id, femaleId: w.living().find((i) => i.sex === 'F')!.id, what: 'crab' }];
     expect(w.playerDigest().join('')).toContain('カニを追い払ってくれた');
+  });
+});
+
+describe('セリフの条件', () => {
+  it('条件つきのセリフは、その条件が本当に成り立つときにだけ出る', () => {
+    const w = World.create(17, 0);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    type Ind = { thought: { raw?: string } | null };
+    const ww = w as unknown as {
+      think: (ind: Ind, key: string, ctx: { about?: unknown }, prob?: number) => void;
+      thoughtTags: (ind: Ind, about?: unknown) => { tags: string[] };
+    };
+    const orig = ww.think.bind(w);
+    const kindsOf = new Map<string, Map<string, Set<string>>>();
+    const bad: string[] = [];
+    let checked = 0;
+    ww.think = (ind, key, ctx, prob) => {
+      const before = ind.thought;
+      orig(ind, key, ctx, prob);
+      if (ind.thought === before || !ind.thought?.raw) return;
+      let m = kindsOf.get(key);
+      if (!m) {
+        m = new Map();
+        for (const b of builtinLines(key as keyof typeof SITUATIONS)) m.set(b.text, (m.get(b.text) ?? new Set()).add(b.kind));
+        kindsOf.set(key, m);
+      }
+      const kinds = m.get(ind.thought.raw);
+      if (!kinds || ['any', 'brash', 'timid'].some((k) => kinds.has(k))) return;
+      checked++;
+      const tags = ww.thoughtTags(ind, ctx.about).tags;
+      if (![...kinds].some((k) => tags.includes(k))) bad.push(`${key}: ${ind.thought.raw}（条件 ${[...kinds].join('/')}、実際 ${tags.join('/') || 'なし'}）`);
+    };
+    for (let y = 0; y < 3; y++) w.simulateYearAuto();
+    expect(checked).toBeGreaterThan(100);
+    expect(bad).toEqual([]);
   });
 });

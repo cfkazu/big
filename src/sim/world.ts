@@ -511,6 +511,18 @@ export class World {
   }
 
   /** 成熟した主型オスの、ホコの素質の平均 */
+  /** いま浜にいる大人のオスのうち、いちばん大きいホコ（その日のうちは使い回す） */
+  private beachMaxCache = { at: -1, value: 0 };
+  beachHokoMax(): number {
+    const at = this.year * 100 + this.day;
+    if (this.beachMaxCache.at !== at) {
+      let max = 0;
+      for (const m of this.living()) if (m.sex === 'M' && m.onBeach && this.age(m) >= 4) max = Math.max(max, this.hoko(m));
+      this.beachMaxCache = { at, value: max };
+    }
+    return this.beachMaxCache.value;
+  }
+
   herdHokoMean(): number {
     const last = this.history[this.history.length - 1];
     if (last && last.hokoMean > 0) return last.hokoMean;
@@ -687,7 +699,7 @@ export class World {
       m.slot = s;
       for (const f of this.slotFemales(s)) f.loyalty = f.loyalty * 0.2 + 0.2 * f.warmth;
       this.dayEvents.push({ kind: 'takeover', slot: s, newId: m.id, oldId: null });
-      this.think(m, 'takeHarem', { other: '空き' });
+      this.think(m, 'takeEmptyBeach', {});
       if (m.id === this.playerId) {
         this.pushLog(`空いた浜を手に入れた。ハーレムの主になった！`, 'player', m.id);
         this.playerStance = this.defaultStance(this.player!);
@@ -1356,7 +1368,7 @@ export class World {
       this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: p.id, type: st.type });
       this.pushLog(`${f.name}に${what}させた。`, 'player', f.id);
       this.think(p, st.type === 'hoko' ? 'groomedHoko' : st.type === 'wound' ? 'groomedWound' : 'groomedFur', { about: f });
-      this.think(f, 'fOrderedOk', { about: p }, 0.7);
+      this.think(f, st.type === 'hoko' ? 'fOrderedOkHoko' : 'fOrderedOk', { about: p }, 0.7);
       return;
     }
     f.loyalty = Math.max(0, f.loyalty - 0.1);
@@ -2040,13 +2052,19 @@ export class World {
     if (male && this.age(male) >= 4) {
       cm = this.hoko(male);
       const mean = this.herdHokoMean();
+      // いま浜にいるオスでいちばん大きいか（「この浜いちばん」のセリフ用）
+      if (male.onBeach && cm >= this.beachHokoMax() - 0.05) tags.push('top');
       if (cm >= mean + 9) tags.push('huge', 'big');
       else if (cm >= mean + 4) tags.push('big');
       else if (cm <= mean - 4) tags.push('small');
     }
     if (female && this.age(female) >= 3) {
-      if (female.loyalty > 0.55 && female.slot !== null && this.slotHolders[female.slot] != null) tags.push('fond');
-      else if (female.loyalty < 0.15 && female.slot !== null) tags.push('cold');
+      // 懐き具合は「いまの浜の主」へのもの。話題のオスがほかのオス（忍び込んだオスなど）なら使わない。
+      const holderId = female.slot !== null ? this.slotHolders[female.slot] : null;
+      const aboutHolder = holderId != null && (!male || male.id === holderId);
+      if (female.loyalty > 0.55 && aboutHolder) tags.push('fond');
+      else if (female.loyalty < 0.15 && aboutHolder) tags.push('cold');
+      if (female.pupId != null && this.get(female.pupId)?.alive) tags.push('withPup');
       if (female.base.pref > 0.62) tags.push('hokoFan');
       else if (female.base.pref < 0.38) tags.push('gentleFan');
     }
@@ -2144,7 +2162,7 @@ export interface HeadRecord {
 
 /** 自分の欄に出すメスのセリフの優先順（あなたとの関わりが深いものから） */
 const FEMALE_LINE_PRIORITY = [
-  'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fShooCrab', 'fShooGull', 'fSplashHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
+  'fCourtAccept', 'fMated', 'fGroomHokoGroup', 'fGroomHoko', 'fShooCrab', 'fShooGull', 'fSplashHoko', 'fOrderedOkHoko', 'fOrderedOk', 'fTended', 'fEscorted', 'fGaveBirth', 'fBigPup',
   'fOrderedNo', 'fCourtNotYet', 'fGroomWound', 'fGroomFur', 'pupHelpGroom', 'fAdmire', 'fSoothed', 'newHolderFemale',
   'fMoveAttracted', 'fPupLost', 'fProtest', 'fEstrus', 'fMoveCrowded', 'pupCheer', 'youngEnvy', 'pupWaitMom', 'pupWaitMomFur', 'pupWaitMate', 'fIdle',
 ];
