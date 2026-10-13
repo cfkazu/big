@@ -831,3 +831,29 @@ describe('冬に子を連れていく', () => {
     if (a.player!.alive && b.player!.alive && b.player!.condition < 1) expect(a.player!.condition).toBeLessThan(b.player!.condition);
   });
 });
+
+describe('8回目のテストプレイを受けた直し', () => {
+  it('季節が変わると、メスのいない日数は数え直す。子を連れると採餌の見込みが下がる', () => {
+    const w = World.create(5, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    w.startBreedingSeason();
+    w.emptyHaremDays = 33;
+    w.endBreedingSeason();
+    w.forage('normal');
+    w.startBreedingSeason();
+    expect(w.emptyHaremDays).toBe(0);
+    w.endBreedingSeason();
+    w.player!.condition = 0.3;
+    expect(w.forageOutlook('normal', 2).delta).toBeLessThan(w.forageOutlook('normal', 0).delta);
+  });
+
+  it('当主を譲ると、目標の連続達成は数え直す', () => {
+    const w = World.create(9, 20);
+    w.choosePlayer(w.founderCandidates()[0].id, true);
+    for (let y = 0; y < 6; y++) w.simulateYearAuto();
+    w.startBreedingSeason();
+    w.goalStreak = 5;
+    w.abdicate(w.abdicateCandidates()[0].id);
+    expect(w.goalStreak).toBe(0);
+  });
+});

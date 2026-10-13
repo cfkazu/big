@@ -112,6 +112,8 @@ export class Individual {
   thought: Thought | null = null;
   /** 最近言ったセリフの元の文（同じことを繰り返さないため） */
   recentLines: string[] = [];
+  /** 誘われて来たメスが、浜に落ち着いているあいだ（year*100+day まで） */
+  settledUntil = -1;
   /** 場面ごとに最後につぶやいた日（year*100+day） */
   keyDay: Record<string, number> = {};
   /** よその浜からの移入個体 */

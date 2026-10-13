@@ -41,6 +41,8 @@ class Game implements GameView {
   speed = 1;
   /** 勝負の判断：毎回聞く／楽な勝負は自動で受ける／気質に任せる */
   judgeMode: 'self' | 'easy' | 'auto' = 'self';
+  /** 「ハーレムにメスがいない」を今季はもう聞かない（年） */
+  private emptyMutedYear = -1;
   /** 「何か起きるまで進める」の途中か */
   private skipping = false;
   tab: Tab = 'selected';
@@ -135,7 +137,7 @@ class Game implements GameView {
         }
       }
       this.toastResult();
-      if (w.day < BREED_DAYS && w.emptyHaremDays % 10 === 3) await this.askEmptyHarem();
+      if (w.day < BREED_DAYS && w.emptyHaremDays % 10 === 3 && this.emptyMutedYear !== w.year) await this.askEmptyHarem();
       if (w.day >= BREED_DAYS) {
         this.playing = false;
         await this.endSeason();
@@ -253,7 +255,7 @@ class Game implements GameView {
       this.scene.playOrcaAttacks(kills);
       await new Promise((r) => setTimeout(r, Math.min(4500, 1800 + kills * 450)));
     }
-    await this.showForageReport(rep, strategy);
+    await this.showForageReport(rep, strategy, guard);
     if (rep.playerDied) {
       const ok = await this.chooseHeir();
       if (!ok) return;
@@ -550,11 +552,18 @@ class Game implements GameView {
       for (const { f, chance, holder } of targets) {
         const pup = f.pupId != null && w.get(f.pupId)?.alive;
         const hn = holder ? w.slotFemales(f.slot!).length : 0;
+        const es = f.estrusStart;
+        const estrus = es < 0 || w.day >= es + 3 ? '今季の発情は終わった' : w.day >= es ? '発情中' : `あと${es - w.day}日で発情`;
+        const caught = (1 - chance) * w.lureCaughtChance(f);
         const why = [
           holder ? (f.loyalty < 0.2 ? `${holder.name}に不満そう` : f.loyalty > 0.55 ? `${holder.name}に懐いている` : `${holder.name}の浜`) : '主がいない',
+          estrus,
           holder && hn > w.guardCap(holder) ? '浜が混み合っている' : '',
           pup ? '子連れ' : '',
+          w.age(f) > 14 ? '年老いて子を産みにくい' : '',
           f.base.pref > 0.62 ? 'ホコ好き' : f.base.pref < 0.38 ? '穏やか好き' : '',
+          holder && (w.lureCaught.get(holder.id) ?? 0) > 0 ? `${holder.name}に目をつけられている` : '',
+          caught >= 0.05 ? `見つかる見込み約${Math.round(caught * 10)}割` : '',
         ].filter(Boolean);
         list.append(
           h(
@@ -574,15 +583,16 @@ class Game implements GameView {
         h(
           'div',
           { class: 'sub' },
-          'いまの主に懐いていないメス、あなたに惹かれるメス（ホコ好きなら大きなホコ、穏やか好きなら穏やかなオス）、混み合った浜のメスほど誘いに乗りやすい。子連れのメスは動きにくい。誘いに行く日は自分の浜の見張りが手薄になり、しくじるとあちらの主に追い払われることもある。',
+          'いまの主に懐いていないメス、あなたに惹かれるメス（ホコ好きなら大きなホコ、穏やか好きなら穏やかなオス）、混み合った浜のメスほど誘いに乗りやすい。子連れのメスは動きにくい。発情の近いメスから並べている。誘いに行く日は自分の浜の見張りが手薄になり、しくじるとあちらの主に見つかって追い払われることもある（何度も見つかると目をつけられる）。連れてきたメスは、10日ほどは浜に落ち着く。',
         ),
         list,
         h('div', { class: 'row' }, btn('やめる', () => done(null))),
       );
     });
     if (id !== null) {
+      const same = w.playerStance.kind === 'lure' && w.playerStance.femaleId === id;
       w.setPlayerStance({ kind: 'lure', femaleId: id });
-      w.pushLog(`明日、${w.get(id)!.name}を誘いに行くことにした。`, 'player', p.id);
+      if (!same) w.pushLog(`明日、${w.get(id)!.name}を誘いに行くことにした。`, 'player', p.id);
     }
     this.refresh();
     return id !== null;
@@ -597,20 +607,13 @@ class Game implements GameView {
       .abdicateCandidates()
       .sort((a, b) => (w.slotOf(b) !== null ? 1 : 0) - (w.slotOf(a) !== null ? 1 : 0) || b.base.hoko - a.base.hoko)
       .slice(0, 8);
-    const rel = (c: Individual) => {
-      if (c.fatherId === p.id) return '息子';
-      const f = w.get(c.fatherId);
-      const m = w.get(c.motherId);
-      if (f?.fatherId === p.id || m?.fatherId === p.id) return '孫';
-      if (c.fatherId != null && c.fatherId === p.fatherId) return '兄弟';
-      return '一族';
-    };
     const id = await ask<number | null>((done) => {
       const box = h('div', { class: 'choices' });
       for (const c of cands) {
         const a = w.age(c);
-        const grow = a < 7 ? `あと${7 - a}年で育ちきる（いま${hokoDisplay(c, w.year).toFixed(1)}cm → 素質${c.base.hoko.toFixed(1)}cm）` : '育ちきっている';
-        box.append(this.candidateButton(c, () => done(c.id), rel(c), p, grow));
+        const d = hokoDisplay(c, w.year) - hokoDisplay(p, w.year);
+        const grow = `${a < 7 ? `あと${7 - a}年で育ちきる（いま${hokoDisplay(c, w.year).toFixed(1)}cm → 素質${c.base.hoko.toFixed(1)}cm）` : '育ちきっている'}・いまのホコは当主より${d >= 0 ? '+' : ''}${d.toFixed(1)}cm${c.base.tactic !== 'R' ? '・主型ではないので浜は持てない' : ''}`;
+        box.append(this.candidateButton(c, () => done(c.id), w.kinLabel(c), undefined, grow));
       }
       const headRisk = World.totalRisk(w.winterRisk(p, 'normal'));
       return h(
@@ -661,7 +664,7 @@ class Game implements GameView {
         ? h('div', { class: 'note', style: 'margin:6px 0' }, 'いま勝てそうな浜の主は見当たらない（引かせる見込みと組んで勝つ見込みを合わせて3割半ばに届かない）。海で蓄えて、痩せてきた主を待つのも手。')
         : null;
     const lureBest = w.lureTargets(1)[0];
-    const choice = await ask<'target' | 'pick' | 'auto' | 'keep' | 'lure'>((done) =>
+    const choice = await ask<'target' | 'pick' | 'auto' | 'keep' | 'lure' | 'mute'>((done) =>
       h(
         'div',
         null,
@@ -672,6 +675,7 @@ class Game implements GameView {
           'div',
           { class: 'row' },
           btn(h('span', null, 'このまま', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, 'いまの予定を続ける')), () => done('keep'), 'small'),
+          btn(h('span', null, '今季はもう聞かない', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, 'おまかせにして任せる')), () => done('mute'), 'small'),
           btn(h('span', null, 'おまかせで待つ', h('span', { class: 'sub', style: 'display:block;font-size:12px;line-height:1.2' }, '脈のあるメスを誘うか、海で食べる')), () => done('auto'), remaining === 0 ? 'primary' : ''),
           remaining > 0 ? btn('相手を選んで挑む…', () => done('pick')) : null,
           remaining > 0 && lureBest ? btn(`メスを誘う…（いちばん脈あり約${Math.round(lureBest.chance * 10)}割）`, () => done('lure')) : null,
@@ -690,6 +694,10 @@ class Game implements GameView {
       const chose = await this.openLure();
       if (!chose) return this.askEmptyHarem();
     } else if (choice === 'auto') w.setPlayerStance({ kind: 'auto' });
+    else if (choice === 'mute') {
+      this.emptyMutedYear = w.year;
+      w.setPlayerStance({ kind: 'auto' });
+    }
     this.refresh();
   }
 
@@ -1294,16 +1302,25 @@ class Game implements GameView {
     const w = this.world;
     const p = w.player!;
     const line = (k: string, v: string) => h('tr', null, h('td', null, k), h('td', { class: 'r' }, v));
-    const outlook = (st: ForageStrategy) => {
-      const o = w.forageOutlook(st);
+    const outlook = (st: ForageStrategy, guarded = 0) => {
+      const o = w.forageOutlook(st, guarded);
       const sign = (v: number) => `${v >= 0 ? '+' : ''}${Math.round(v * 100)}`;
       const range = Math.round(o.lo * 100) === Math.round(o.hi * 100) ? `${sign(o.delta)}%` : `${sign(o.lo)}〜${sign(o.hi)}%`;
       return `見込み：脂肪 ${range}（来季のホコの張り 約${Math.round((0.55 + 0.45 * Math.min(1, Math.max(0, p.condition + o.delta))) * 100)}%）・シャチに襲われる確率 ${(o.orca * 100).toFixed(1)}%`;
     };
     return ask<{ strategy: ForageStrategy; guard: number[] }>((done) => {
       const guard: number[] = [];
-      const choice = (key: ForageStrategy, label: string, desc: string) =>
-        h('button', { class: `btn choice ${key === 'normal' ? 'primary' : ''}`, onclick: () => done({ strategy: key, guard: [...guard] }) }, h('div', { class: 'btn-body' }, h('div', { class: 'name' }, label), h('div', { class: 'sub' }, desc)));
+      // 連れていく子を選ぶたびに、見込みを書き換える
+      const descs: { el: HTMLElement; text: (n: number) => string }[] = [];
+      const choice = (key: ForageStrategy, label: string, desc: (n: number) => string) => {
+        const el = h('div', { class: 'sub' }, desc(0));
+        descs.push({ el, text: desc });
+        return h('button', { class: `btn choice ${key === 'normal' ? 'primary' : ''}`, onclick: () => done({ strategy: key, guard: [...guard] }) }, h('div', { class: 'btn-body' }, h('div', { class: 'name' }, label), el));
+      };
+      const refreshDescs = () => {
+        for (const d of descs) d.el.textContent = d.text(guard.length);
+      };
+      const limitNote = h('div', { class: 'sub' });
       // 冬に連れていく子（あなたの血を引く幼いオス、2 頭まで）
       const kids = w.youngKin().slice(0, 6);
       const kidBox = h('div', { class: 'list' });
@@ -1320,9 +1337,12 @@ class Game implements GameView {
               {
                 class: `btn item ${on ? 'on' : ''}`,
                 onclick: () => {
+                  limitNote.textContent = '';
                   if (on) guard.splice(guard.indexOf(k.id), 1);
                   else if (guard.length < MAX_GUARDED) guard.push(k.id);
+                  else limitNote.textContent = `連れていけるのは${MAX_GUARDED}頭まで。ほかの子を外してから選ぶ。`;
                   drawKids();
+                  refreshDescs();
                 },
               },
               h('span', null, `${on ? '✓ ' : ''}${w.kinLabel(k)}の${k.name}`, h('span', { class: 'sub' }, ` ${w.age(k)}歳`), ' ', h('span', { class: 'stars' }, starText(potentialStars(k.base.hoko, w.herdHokoMean())))),
@@ -1373,6 +1393,7 @@ class Game implements GameView {
               h('h3', null, `冬に連れていく子（${MAX_GUARDED}頭まで）`),
               h('div', { class: 'sub' }, `連れていった子は餌場を教わって太りやすく、シャチからも守られる。そのぶん、あなたが食べる量は1頭につき${Math.round(GUARD_COST * 100)}%減る。`),
               kidBox,
+              limitNote,
             )
           : null,
         h('h3', null, '採餌期の過ごし方'),
@@ -1402,15 +1423,15 @@ class Game implements GameView {
         h(
           'div',
           { class: 'choices' },
-          choice('cautious', '慎重に', `浅瀬で少しずつ食べる。${outlook('cautious')}`),
-          choice('normal', 'ふつうに', `いつもどおり沖へ出る。${outlook('normal')}`),
-          choice('greedy', '貪欲に', `遠くの餌場まで行く。ホコが大きいほど泳ぎが遅く、シャチに狙われやすい。${outlook('greedy')}`),
+          choice('cautious', '慎重に', (n) => `浅瀬で少しずつ食べる。${outlook('cautious', n)}`),
+          choice('normal', 'ふつうに', (n) => `いつもどおり沖へ出る。${outlook('normal', n)}`),
+          choice('greedy', '貪欲に', (n) => `遠くの餌場まで行く。ホコが大きいほど泳ぎが遅く、シャチに狙われやすい。${outlook('greedy', n)}`),
         ),
       );
     });
   }
 
-  private showForageReport(rep: ForageReport, strategy: ForageStrategy): Promise<void> {
+  private showForageReport(rep: ForageReport, strategy: ForageStrategy, guard: number[] = []): Promise<void> {
     const w = this.world;
     const p = w.player;
     const notable = rep.deaths.filter((d) => d.dynasty > 0 && d.age > 0);
@@ -1428,6 +1449,19 @@ class Game implements GameView {
           : p
             ? h('div', { class: 'sub' }, `脂肪 ${rep.conditionDelta >= 0 ? '+' : ''}${Math.round(rep.conditionDelta * 100)}% → ${Math.round(p.condition * 100)}%（来季のホコの張り ${Math.round(hokoFirmness(p, true) * 100)}%）`)
             : null,
+        // 連れていった子の冬
+        guard.length
+          ? h(
+              'div',
+              { class: 'sub', style: 'margin-top:4px' },
+              `連れていった子：${guard
+                .map((id) => {
+                  const k = w.get(id);
+                  return k ? `${k.name}${k.alive ? 'は無事に冬を越した' : `は${causeLabel(k.deathCause!)}で死んだ`}` : '';
+                })
+                .join('、')}。`,
+            )
+          : null,
         notable.length ? h('h3', null, '一族の訃報') : null,
         ...notable.filter((d) => d.id !== w.playerId).slice(0, 8).map((d) => h('div', { class: 'sub' }, `${d.name}（${d.age}歳）…${causeLabel(d.cause)}`)),
         pupDeaths ? h('div', { class: 'sub' }, `一族の子${pupDeaths}頭が冬を越せなかった。`) : null,

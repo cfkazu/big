@@ -244,6 +244,8 @@ export class World {
   goalStreak = 0;
   /** この繁殖期に口説き落としたメスの数（多いほど次は難しい） */
   luredThisSeason = 0;
+  /** この繁殖期に、誘いをしくじって見つかった主（主の id → 回数） */
+  lureCaught = new Map<number, number>();
   /** 当主を譲った年（年に一度まで） */
   abdicatedYear = -1;
   /** プレイヤーの浜にメスがいない日が何日続いているか */
@@ -426,10 +428,11 @@ export class World {
       const target = Math.max(2, Math.min(12, Math.round(n * 0.25)));
       return (this.yearGoal = { kind: 'conceive', target, label: `あなたの子を${target}頭に宿させる` });
     }
+    if (s !== null) return (this.yearGoal = { kind: 'mate', target: 3, label: 'メスを迎えて、3回つがう' });
     // 勝てそうな浜がなければ、来季に向けて蓄える
     const reachable = this.challengeTargets().some((t) => t.isHolder && this.challengeVerdict(this.get(t.id)!).pWin >= 0.35);
-    if (s === null && !reachable && age >= 5) return (this.yearGoal = { kind: 'fat', target: 0.95, label: '脂肪を満タン近く（95%以上）にして季節を終える' });
-    return (this.yearGoal = { kind: 'holder', target: 1, label: s !== null ? 'メスを迎える（ハーレムを作る）' : '浜を手に入れ、メスを迎える' });
+    if (!reachable && age >= 5) return (this.yearGoal = { kind: 'fat', target: 0.95, label: '脂肪を満タン近く（95%以上）にして季節を終える' });
+    return (this.yearGoal = { kind: 'mate', target: 3, label: '浜を手に入れて、メスと3回つがう' });
   }
 
   /** 今年の目標を達成したか（繁殖期の終わりに呼ぶ）。続けて達成した年数も数える。 */
@@ -486,6 +489,8 @@ export class World {
       h.retired = true;
     }
     this.abdicatedYear = this.year;
+    // 目標の連続達成は、当主ごとに数え直す
+    this.goalStreak = 0;
     this.pushLog(`${old.name}は当主を${next.name}に譲った。`, 'dynasty', old.id);
     this.choosePlayer(newId, false);
   }
@@ -887,6 +892,8 @@ export class World {
     this.conceptionsThisYear = 0;
     this.playerConceptions = 0;
     this.luredThisSeason = 0;
+    this.lureCaught = new Map();
+    this.emptyHaremDays = 0;
     this.playerFert = { females: 0, won: 0, lost: 0, none: 0, miscarried: 0 };
     const living = this.living();
     const adultF = living.filter((i) => isAdultFemale(i, this.year)).length;
@@ -1360,6 +1367,8 @@ export class World {
   private femaleChoose(f: Individual, initial: boolean): void {
     let moveP = f.pupId ? 0.04 : 0.12;
     if (f.slot !== null && f.slot === this.soothedSlot) moveP *= 0.3;
+    // 誘われて来たばかりのメスは、しばらく腰を落ち着ける
+    if (this.year * 100 + this.day < f.settledUntil) moveP *= 0.15;
     if (!initial && f.slot !== null && this.slotHolders[f.slot] != null && !this.rng.chance(moveP)) {
       // 主のいる枠にいる限り、たまにしか考え直さない
       f.loyalty = Math.min(1, f.loyalty + 0.01);
@@ -1394,7 +1403,21 @@ export class World {
         const h = this.get(this.slotHolders[best])!;
         if (crowded || harassed) this.think(f, 'fMoveCrowded', {}, 0.6);
         else this.think(f, 'fMoveAttracted', { about: h }, 0.4);
-        if (oldHolder && oldHolder.id === this.playerId) this.pushLog(`${f.name}がハーレムを去った。`, 'player', f.id);
+        if (oldHolder && oldHolder.id === this.playerId) {
+          // 去った理由も知らせる
+          const why = crowded
+            ? '浜が混み合ってきたので'
+            : harassed
+              ? '浜が騒がしいので'
+              : this.attraction(f, h) > this.attraction(f, oldHolder) + 0.2
+                ? f.base.pref >= 0.5
+                  ? `${h.name}のホコに惹かれて`
+                  : `${h.name}のほうが穏やかそうなので`
+                : f.loyalty < 0.2
+                  ? 'あなたに懐かないまま'
+                  : 'ほかの浜を見てみたくなって';
+          this.pushLog(`${f.name}がハーレムを去った（${why}、${h.name}の浜へ）。`, 'player', f.id);
+        }
         if (h.id === this.playerId) this.pushLog(`${f.name}がハーレムにやってきた。`, 'player', f.id);
       }
     }
@@ -1553,6 +1576,8 @@ export class World {
     const crowded = holder && f.slot !== null && this.slotFemales(f.slot).length > this.guardCap(holder) ? 0.12 : 0;
     let c = 0.05 + 0.3 * (1 - tie) + 0.12 * Math.max(-1, Math.min(1, diff)) + crowded;
     if (f.pupId != null && this.get(f.pupId)?.alive) c *= 0.5;
+    // 何度も見つかった主には目をつけられていて、その浜のメスには近づきにくい
+    if (holder) c *= Math.pow(0.75, this.lureCaught.get(holder.id) ?? 0);
     // 口説くたびに噂が立ち、メスたちは用心する。自分のハーレムが大きいほど、よそのメスは寄りつきにくい。
     c *= Math.pow(0.8, this.luredThisSeason);
     const s = this.slotOf(p);
@@ -1568,8 +1593,28 @@ export class World {
     return this.living()
       .filter((f) => f.sex === 'F' && f.onBeach && isAdultFemale(f, this.year) && f.slot !== s)
       .map((f) => ({ f, chance: this.lureChance(f), holder: f.slot !== null ? this.get(this.slotHolders[f.slot]) : undefined }))
-      .sort((a, b) => b.chance - a.chance)
+      // 見込みが同じくらいなら、発情の近い、子を産みやすいメスを先に
+      .map((x) => ({ ...x, key: x.chance * this.lureWorth(x.f) }))
+      .sort((a, b) => b.key - a.key)
       .slice(0, n);
+  }
+
+  /** 誘う値打ち：発情中・発情が近いほど高く、今季の発情が終わった・年老いたメスは低い */
+  lureWorth(f: Individual): number {
+    const es = f.estrusStart;
+    let k = 1;
+    if (es < 0 || this.day >= es + 3) k = 0.4;
+    else if (this.day >= es) k = 1.4;
+    else if (es - this.day <= 10) k = 1.2;
+    if (this.age(f) > 14) k *= 0.6;
+    return k;
+  }
+
+  /** 誘いをしくじったとき、あちらの主に見つかる見込み（何度も見つかるほど上がる） */
+  lureCaughtChance(f: Individual): number {
+    const holder = f.slot !== null ? this.get(this.slotHolders[f.slot]) : undefined;
+    if (!holder) return 0;
+    return Math.min(0.8, 0.35 + 0.15 * (this.lureCaught.get(holder.id) ?? 0));
   }
 
   /** よその浜のメスを口説きに行く。うまくいけば自分の浜へ。しくじると、相手の主に追い払われることも。 */
@@ -1589,6 +1634,7 @@ export class World {
       const from = f.slot;
       f.slot = s;
       f.loyalty = Math.min(0.8, this.arrivalLoyalty(f, p, false) + 0.1);
+      f.settledUntil = this.year * 100 + this.day + 10;
       this.invalidateSlots();
       this.dayEvents.push({ kind: 'move', femaleId: f.id, from, to: s });
       this.luredThisSeason++;
@@ -1598,7 +1644,8 @@ export class World {
       return;
     }
     // しくじると、相手の主に見つかって追い払われることがある
-    if (holder && holder.onBeach && this.rng.chance(0.35)) {
+    if (holder && holder.onBeach && this.rng.chance(this.lureCaughtChance(f))) {
+      this.lureCaught.set(holder.id, (this.lureCaught.get(holder.id) ?? 0) + 1);
       this.chase(holder, p, f.slot);
     } else {
       this.pushLog(`${f.name}を誘ったが、つれなかった。`, 'player', f.id);
@@ -2090,11 +2137,14 @@ export class World {
   }
 
   /** プレイヤーが採餌の方針を選ぶための見込み（体力の増減と、シャチに襲われる確率） */
-  forageOutlook(strat: ForageStrategy): { delta: number; lo: number; hi: number; orca: number } {
+  forageOutlook(strat: ForageStrategy, guarded = 0): { delta: number; lo: number; hi: number; orca: number } {
     const p = this.player;
     if (!p) return { delta: 0, lo: 0, hi: 0, orca: 0 };
     const { effort, orcaMul } = FORAGE[strat];
-    const { gain, upkeep } = this.forageBudget(p, this.foodNow(), effort);
+    const budget = this.forageBudget(p, this.foodNow(), effort);
+    // 子を連れていくと、そのぶん自分が食べる量が減る
+    const gain = budget.gain * (1 - GUARD_COST * Math.min(guarded, MAX_GUARDED));
+    const upkeep = budget.upkeep;
     // 餌の当たり外れで、食べられる量は ±15% ぶれる
     const after = (k: number) => Math.min(1, Math.max(0, p.condition + gain * k - upkeep));
     return { delta: after(1) - p.condition, lo: after(0.85) - p.condition, hi: after(1.15) - p.condition, orca: this.orcaRisk(p, orcaMul, after(1)) };
