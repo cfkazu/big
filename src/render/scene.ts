@@ -56,6 +56,25 @@ interface Timed {
   run: () => void;
 }
 
+/** あなたにまつわる出来事を、浜に寄って見せる場面 */
+type ShotKind = 'groomHoko' | 'groomFur' | 'groomWound' | 'tend' | 'escort' | 'soothe' | 'splash' | 'crab' | 'gull' | 'mate' | 'birth' | 'arrive';
+
+interface Shot {
+  kind: ShotKind;
+  /** 主役（たいていあなた） */
+  aId: number;
+  /** 相手（メス・子） */
+  bId: number;
+  start: number;
+  dur: number;
+  caption: string;
+}
+
+/** 寄りの絵の倍率と、映す範囲 */
+const ZOOM = 3;
+const CROP_W = VIEW_W / ZOOM;
+const CROP_H = VIEW_H / ZOOM;
+
 /** 海と砂浜の背景を一度だけ描いておく */
 function buildBackground(seed: number): HTMLCanvasElement {
   const cv = document.createElement('canvas');
@@ -176,6 +195,9 @@ export class Scene {
   private gulls: { x: number; y: number; vx: number; phase: number }[] = [];
   selectedId: number | null = null;
   hoverId: number | null = null;
+  /** お世話などで、浜に寄った絵を見せるか */
+  closeups = true;
+  private shots: Shot[] = [];
 
   constructor(
     public canvas: HTMLCanvasElement,
@@ -195,6 +217,7 @@ export class Scene {
     this.particles = [];
     this.gauges = [];
     this.timeline = [];
+    this.shots = [];
   }
 
   // ───────────────────────── 配置 ─────────────────────────
@@ -337,6 +360,8 @@ export class Scene {
       const at = t0 + dayMs * 0.3 + (dayMs * 0.6 * i) / Math.max(1, others.length);
       this.timeline.push({ at, run: () => this.playEvent(e) });
     });
+
+    if (this.closeups) this.queueShots(events, t0, dayMs);
 
     // つぶやきの吹き出し（今日つぶやいた個体）
     const thinkers = w.living().filter((i) => i.thought && i.thought.year === w.year && i.thought.day === w.day - 1 && i.onBeach);
@@ -555,6 +580,237 @@ export class Scene {
     return { id, coat, collar: ind.sex === 'M' && ind.base.tactic === 'S' && age >= 4, grow: this.growFor(ind, id) };
   }
 
+  // ───────────────────────── 寄りの絵 ─────────────────────────
+
+  /** その日のあなたにまつわる出来事から、寄って見せる場面を 2 つまで選ぶ */
+  private queueShots(events: WorldEvent[], t0: number, dayMs: number): void {
+    const w = this.world;
+    const pid = w.playerId;
+    if (pid == null) return;
+    const p = w.get(pid);
+    if (!p) return;
+    const slot = w.slotOf(p);
+    const name = (id: number) => w.get(id)?.name ?? '';
+    const cands: { pri: number; kind: ShotKind; aId: number; bId: number; caption: string }[] = [];
+    for (const e of events) {
+      switch (e.kind) {
+        case 'birth':
+          if (w.get(e.pupId)?.fatherId === pid) cands.push({ pri: 9, kind: 'birth', aId: e.motherId, bId: e.pupId, caption: `${name(e.motherId)}があなたの子を産んだ` });
+          break;
+        case 'mate':
+          if (e.maleId === pid) cands.push({ pri: 7, kind: 'mate', aId: pid, bId: e.femaleId, caption: `${name(e.femaleId)}とつがった` });
+          break;
+        case 'move':
+          if (slot !== null && e.to === slot && e.from !== null) cands.push({ pri: 8, kind: 'arrive', aId: pid, bId: e.femaleId, caption: `${name(e.femaleId)}が浜にやってきた` });
+          break;
+        case 'groom':
+          if (e.maleId === pid) {
+            const kind: ShotKind = e.type === 'hoko' ? 'groomHoko' : e.type === 'wound' ? 'groomWound' : 'groomFur';
+            const what = e.type === 'hoko' ? 'ホコをなめて綺麗にしている' : e.type === 'wound' ? '傷をなめて手当てしている' : '背中を毛づくろいしている';
+            // あなたが頼んだ世話は、いちばん先に映す
+            cands.push({ pri: e.ordered ? 10 : e.type === 'hoko' ? 6 : 4, kind, aId: pid, bId: e.femaleId, caption: `${name(e.femaleId)}が${what}` });
+          }
+          break;
+        case 'hokoCare':
+          if (e.maleId === pid) {
+            const kind: ShotKind = e.what === 'splash' ? 'splash' : e.what === 'crab' ? 'crab' : 'gull';
+            const what = e.what === 'splash' ? 'ホコに海水をかけてくれた' : e.what === 'crab' ? 'カニを追い払ってくれた' : 'カモメを追い払ってくれた';
+            cands.push({ pri: 5, kind, aId: pid, bId: e.femaleId, caption: `${name(e.femaleId)}が${what}` });
+          }
+          break;
+        case 'tend':
+          if (e.maleId === pid) cands.push({ pri: 10, kind: 'tend', aId: pid, bId: e.femaleId, caption: `${name(e.femaleId)}に構っている` });
+          break;
+        case 'soothe':
+          if (e.maleId === pid) {
+            const f = w.slotFemales(e.slot)[0];
+            cands.push({ pri: 10, kind: 'soothe', aId: pid, bId: f?.id ?? -1, caption: '低い声で鳴いて、ハーレムをなだめた' });
+          }
+          break;
+      }
+    }
+    if (cands.length === 0) return;
+    // 前の日の、まだ始まっていない場面は捨てる（いま映している場面は最後まで）
+    this.shots = this.shots.filter((s) => s.start <= this.now && this.now < s.start + s.dur);
+    const busyUntil = this.shots.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+    const dur = Math.max(1300, Math.min(2200, dayMs * 0.8));
+    // 同じ種類は一度だけ。優先度の高い順に 2 つまで
+    const seen = new Set<ShotKind>();
+    const picked = cands
+      .sort((a, b) => b.pri - a.pri)
+      .filter((c) => (seen.has(c.kind) ? false : (seen.add(c.kind), true)))
+      .slice(0, 2);
+    let at = Math.max(t0 + dayMs * 0.15, busyUntil + 100);
+    for (const c of picked) {
+      this.shots.push({ kind: c.kind, aId: c.aId, bId: c.bId, start: at, dur, caption: c.caption });
+      at += dur + 150;
+    }
+  }
+
+  private activeShot(): Shot | undefined {
+    return this.shots.find((s) => this.now >= s.start && this.now < s.start + s.dur);
+  }
+
+  /** 寄りの絵で、個体を大きく描く。x は体の中心、gy は足もと。 */
+  private drawBig(ind: Individual, x: number, gy: number, faceRight: boolean, pose: Actor['pose'], frame: 0 | 1, bob = 0): void {
+    const ctx = this.ctx;
+    const { id, coat, collar, grow } = this.spriteFor(ind, { pose } as Actor);
+    const sp = getSprite(id, { coat, collar, scars: false, frame, flip: faceRight, grow });
+    const w = sp.width * ZOOM;
+    const h = sp.height * ZOOM;
+    const left = Math.round(x - w / 2);
+    // 影
+    ctx.fillStyle = P.sand2;
+    ctx.fillRect(left + ZOOM * 2, gy - ZOOM + 2, w - ZOOM * 4, ZOOM);
+    if (ind.id === this.world.playerId) ctx.drawImage(getOutline(sp, P.gold0), left - ZOOM, gy - h + bob - ZOOM, (sp.width + 2) * ZOOM, (sp.height + 2) * ZOOM);
+    ctx.drawImage(sp, left, gy - h + bob, w, h);
+  }
+
+  private drawBigIcon(icon: IconId, x: number, y: number): void {
+    const ic = getIcon(icon);
+    this.ctx.drawImage(ic, Math.round(x - ic.width), Math.round(y), ic.width * 2, ic.height * 2);
+  }
+
+  private shotText(text: string, x: number, y: number, color: string = P.white): void {
+    const ctx = this.ctx;
+    ctx.font = '16px DotGothic16, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = P.ink;
+    ctx.fillText(text, x + 2, y + 2);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+  }
+
+  private drawShot(s: Shot): void {
+    const ctx = this.ctx;
+    const w = this.world;
+    const el = this.now - s.start;
+    const u = el / s.dur;
+    const a = w.get(s.aId);
+    const b = w.get(s.bId);
+    // 二頭のいる辺りの浜を、そのまま拡大して背景にする
+    const pa = this.actors.get(s.aId);
+    const pb = this.actors.get(s.bId);
+    const fx = pa && pb ? (pa.x + pb.x) / 2 : pa?.x ?? pb?.x ?? VIEW_W / 2;
+    const fy = pa && pb ? (pa.y + pb.y) / 2 : pa?.y ?? pb?.y ?? VIEW_H / 2;
+    const sx = Math.max(0, Math.min(VIEW_W - CROP_W, fx - CROP_W / 2));
+    const sy = Math.max(0, Math.min(VIEW_H - CROP_H, fy - CROP_H * 0.7));
+    ctx.drawImage(this.bg, sx, sy, CROP_W, CROP_H, 0, 0, VIEW_W, VIEW_H);
+    const gy = 172;
+    const frame: 0 | 1 = Math.floor(el / 220) % 2 === 0 ? 0 : 1;
+    const bob = Math.round(Math.sin(el / 90) * 2);
+    const tick = Math.floor(el / 160);
+    // 主役（左、右向き）と相手（右、左向き）
+    const drawPair = (bx: number, bBob = 0, aPose: Actor['pose'] = 'idle', bFace = false) => {
+      if (a) this.drawBig(a, 140, gy, true, aPose, frame);
+      if (b) this.drawBig(b, bx, gy + 4, bFace, 'idle', frame, bBob);
+    };
+    switch (s.kind) {
+      case 'groomHoko':
+        drawPair(222, bob);
+        if (tick % 3 === 0) this.drawBigIcon('sparkle', 186 + ((tick * 13) % 20), 110 - ((tick * 7) % 16));
+        this.shotText(tick % 4 < 2 ? 'ぺろぺろ' : 'ぺろり', 200, 78);
+        break;
+      case 'groomWound':
+        drawPair(218, bob);
+        if (tick % 3 === 0) this.drawBigIcon('plus', 160 + ((tick * 11) % 30), 96 - ((tick * 5) % 14));
+        this.shotText('ペロッ……', 196, 70);
+        break;
+      case 'groomFur': {
+        // メスは主の背中側にまわる
+        if (b) this.drawBig(b, 112, gy - 6, true, 'idle', frame, bob);
+        if (a) this.drawBig(a, 196, gy, true, 'idle', frame);
+        if (tick % 2 === 0) {
+          ctx.fillStyle = P.sand0;
+          ctx.fillRect(150 + ((tick * 17) % 40), 120 + ((tick * 9) % 20), 3, 3);
+        }
+        this.shotText('ゴシゴシ', 160, 70);
+        break;
+      }
+      case 'tend':
+        if (a) this.drawBig(a, 150, gy, true, 'idle', frame, bob);
+        if (b) this.drawBig(b, 232, gy + 4, false, 'idle', frame);
+        if (tick % 4 === 0) this.drawBigIcon('heart', 236, 96 - ((tick * 3) % 20));
+        this.shotText('ゴシゴシ', 196, 70);
+        break;
+      case 'escort':
+        drawPair(226);
+        this.drawBigIcon('heart', 230, 92);
+        break;
+      case 'soothe':
+        if (b) this.drawBig(b, 250, gy + 6, false, 'idle', frame);
+        if (a) this.drawBig(a, 140, gy, true, 'rear', frame);
+        if (tick % 3 !== 2) this.drawBigIcon('note', 150 + ((tick * 19) % 50), 60 + ((tick * 7) % 20));
+        this.shotText('ブォォ……', 196, 64);
+        break;
+      case 'splash': {
+        drawPair(232, 0);
+        ctx.fillStyle = P.cyan;
+        for (let i = 0; i < 14; i++) {
+          const k = (el / 1000 + i * 0.07) % 0.6;
+          ctx.fillRect(Math.round(200 - k * 90 + i * 3), Math.round(100 + k * k * 160 - i), 3, 3);
+        }
+        this.shotText('ばしゃっ！', 196, 70);
+        break;
+      }
+      case 'crab': {
+        drawPair(240, 0);
+        // カニが逃げていく
+        const cx = Math.round(180 + u * 200);
+        ctx.fillStyle = P.red1;
+        ctx.fillRect(cx, gy - 9, 12, 6);
+        ctx.fillRect(cx - 3, gy - 12, 3, 3);
+        ctx.fillRect(cx + 12, gy - 12, 3, 3);
+        ctx.fillStyle = P.ink;
+        ctx.fillRect(cx + 3, gy - 9, 2, 2);
+        ctx.fillRect(cx + 7, gy - 9, 2, 2);
+        this.drawBigIcon('anger', 244, 96);
+        this.shotText('シッシッ！', 196, 70);
+        break;
+      }
+      case 'gull': {
+        drawPair(232, 0);
+        const gx = Math.round(190 + u * 220);
+        const gyy = Math.round(110 - u * 100);
+        const up = tick % 2 === 0;
+        ctx.fillStyle = P.white;
+        ctx.fillRect(gx, gyy, 6, 3);
+        ctx.fillRect(gx - 9, gyy + (up ? -6 : 3), 9, 3);
+        ctx.fillRect(gx + 6, gyy + (up ? -6 : 3), 9, 3);
+        this.drawBigIcon('anger', 236, 96);
+        this.shotText('バサバサッ', 196, 70);
+        break;
+      }
+      case 'mate':
+        // つがいは並んでハートが上がるだけ
+        drawPair(212, 0, 'idle', false);
+        for (let i = 0; i < 3; i++) this.drawBigIcon('heart', 170 + i * 22, 90 - ((el / 12 + i * 20) % 50));
+        break;
+      case 'birth':
+        if (a) this.drawBig(a, 170, gy, true, 'idle', frame);
+        if (b) this.drawBig(b, 236, gy + 6, false, 'idle', frame, tick % 4 === 0 ? -3 : 0);
+        if (tick % 2 === 0) this.drawBigIcon('sparkle', 236 + ((tick * 7) % 20) - 10, 110);
+        this.shotText('ぴゃあ！', 236, 90);
+        break;
+      case 'arrive': {
+        // 右から歩いてくる
+        const bx = Math.round(330 - Math.min(1, u * 1.6) * 100);
+        if (a) this.drawBig(a, 140, gy, true, 'idle', frame);
+        if (b) this.drawBig(b, bx, gy + 4, false, 'idle', frame);
+        if (u > 0.6) this.drawBigIcon('heart', bx + 4, 96);
+        break;
+      }
+    }
+    // 上下の帯と、場面の説明
+    // 説明は上の帯に（下は一時停止の案内と重なるので細く）
+    const slide = Math.min(1, el / 150);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, 0, VIEW_W, Math.round(26 * slide));
+    ctx.fillRect(0, VIEW_H - Math.round(10 * slide), VIEW_W, 10);
+    if (slide >= 1) this.shotText(s.caption, VIEW_W / 2, 19, P.gold1);
+  }
+
   update(dtMs: number): void {
     this.now += dtMs;
     const dt = dtMs / 1000;
@@ -658,6 +914,8 @@ export class Scene {
       this.drawMarkers(a, ind, t);
     }
     for (const g of this.gulls) this.drawGull(g);
+    const shot = this.activeShot();
+    if (shot) this.drawShot(shot);
   }
 
   private drawSea(t: number): void {
@@ -827,6 +1085,8 @@ export class Scene {
   // ───────────────────────── 当たり判定 ─────────────────────────
 
   pick(vx: number, vy: number): number | null {
+    // 寄りの絵を映しているあいだは、個体を指せない
+    if (this.activeShot()) return null;
     let best: number | null = null;
     let bestY = -Infinity;
     for (const a of this.actors.values()) {
@@ -843,6 +1103,14 @@ export class Scene {
       }
     }
     return best;
+  }
+
+  /** 寄りの絵を映していたら、引きの絵に戻す（戻したら true） */
+  skipShot(): boolean {
+    const shot = this.activeShot();
+    if (!shot) return false;
+    shot.dur = this.now - shot.start;
+    return true;
   }
 
   actorPos(id: number): { x: number; y: number } | null {

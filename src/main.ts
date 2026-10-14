@@ -69,6 +69,11 @@ class Game implements GameView {
     this.world = World.create(Math.floor(Math.random() * 1e9), 15);
     this.world.startBreedingSeason();
     this.scene = new Scene(this.canvas, this.world);
+    try {
+      this.scene.closeups = localStorage.getItem('hamatodo-closeups') !== 'off';
+    } catch {
+      /* 既定は見る */
+    }
     this.scene.applyDay([], 0);
     this.bindCanvas();
     this.fit();
@@ -923,6 +928,8 @@ class Game implements GameView {
     });
     this.canvas.addEventListener('click', (e) => {
       if (this.mode === 'title') return;
+      // 寄りの絵はクリックで飛ばす
+      if (this.scene.skipShot()) return;
       const v = toView(e);
       this.select(this.scene.pick(v.x, v.y));
     });
@@ -1234,6 +1241,18 @@ class Game implements GameView {
               b.textContent = this.battleAnim ? '勝負のカットイン：見る' : '勝負のカットイン：見ない';
               try {
                 localStorage.setItem('hamatodo-battle', this.battleAnim ? 'on' : 'off');
+              } catch {
+                /* 保存できなくても、この回は効く */
+              }
+            }, 'small');
+            return b;
+          })(),
+          (() => {
+            const b = btn(this.scene.closeups ? 'お世話などの寄りの絵：見る' : 'お世話などの寄りの絵：見ない', () => {
+              this.scene.closeups = !this.scene.closeups;
+              b.textContent = this.scene.closeups ? 'お世話などの寄りの絵：見る' : 'お世話などの寄りの絵：見ない';
+              try {
+                localStorage.setItem('hamatodo-closeups', this.scene.closeups ? 'on' : 'off');
               } catch {
                 /* 保存できなくても、この回は効く */
               }

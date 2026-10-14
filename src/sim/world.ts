@@ -88,7 +88,7 @@ export type WorldEvent =
   | { kind: 'fight'; aId: number; bId: number; winnerId: number; slot: number | null }
   | { kind: 'takeover'; slot: number; newId: number; oldId: number | null }
   | { kind: 'mate'; maleId: number; femaleId: number; how: 'holder' | 'satellite' | 'sneaker' | 'peripheral' }
-  | { kind: 'groom'; femaleId: number; maleId: number; type: 'hoko' | 'wound' | 'fur' }
+  | { kind: 'groom'; femaleId: number; maleId: number; type: 'hoko' | 'wound' | 'fur'; ordered?: boolean }
   | { kind: 'tend'; maleId: number; femaleId: number }
   | { kind: 'hokoCare'; maleId: number; femaleId: number; what: HokoCare }
   | { kind: 'soothe'; maleId: number; slot: number }
@@ -1509,7 +1509,7 @@ export class World {
       else p.condition = Math.min(1, p.condition + 0.005);
       f.loyalty = Math.min(1, f.loyalty + 0.03);
       p.season.groomed++;
-      this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: p.id, type: st.type });
+      this.dayEvents.push({ kind: 'groom', femaleId: f.id, maleId: p.id, type: st.type, ordered: true });
       this.pushLog(`${f.name}に${what}させた。`, 'player', f.id);
       this.think(p, st.type === 'hoko' ? 'groomedHoko' : st.type === 'wound' ? 'groomedWound' : 'groomedFur', { about: f });
       this.think(f, st.type === 'hoko' ? 'fOrderedOkHoko' : 'fOrderedOk', { about: p }, 0.7);
